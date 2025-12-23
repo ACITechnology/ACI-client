@@ -1,0 +1,32 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: postgres
+    restart: always
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: aci_portal
+      POSTGRES_USER: aci
+      POSTGRES_PASSWORD: 123456
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: aci-caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

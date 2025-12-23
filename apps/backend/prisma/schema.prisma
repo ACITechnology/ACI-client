@@ -1,0 +1,69 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Table des utilisateurs du portail
+model User {
+  id                Int      @id @default(autoincrement())
+  email             String   @unique
+  password          String
+
+  firstName         String?
+  lastName          String?
+  role              String @default("users")
+  phone             String?
+
+  // Relation avec l'entreprise
+ company    Company? @relation("CompanyUsers", fields: [companyId], references: [id])
+  companyId  Int?
+
+  // Rempli automatiquement après création contact
+  autotaskContactId Int?
+  autotaskCompanyId Int?
+
+  avatarUrl         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  attachments       Attachment[]
+
+  @@map("users")
+}
+
+// Table pour les pièces jointes des tickets
+model Attachment {
+  id          Int      @id @default(autoincrement())
+  filename    String
+  originalName String
+  mimetype     String
+  size         Int
+  path         String   // ex: /uploads/abc123.pdf
+  ticketId     String?  // ID du ticket Autotask (pas de relation forte, juste texte)
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  uploadedById Int
+  createdAt    DateTime @default(now())
+
+  @@map("attachments")
+}
+
+model Company {
+  id             Int      @id @default(autoincrement())
+  autotaskId     Int      @unique // ID réel dans Autotask
+  name           String   // "AFIMÈS"
+  nameNormalized String   @unique // "afimes" pour recherche
+  isActive       Boolean  @default(true)
+
+  users          User[]   @relation("CompanyUsers")  // ← nom de la relation
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([nameNormalized])
+  @@map("companies")
+}

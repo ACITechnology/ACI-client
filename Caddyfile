@@ -1,0 +1,16 @@
+# Portail client
+client.acitechnology.eu {
+    reverse_proxy frontend:3000
+}
+
+# API backend
+api.client.acitechnology.eu {
+    reverse_proxy backend:3001
+}
+
+# Fichiers uploadés (avatars + pièces jointes temporaires)
+uploads.client.acitechnology.eu {
+    root * /uploads
+    file_server
+    encode gzip
+}

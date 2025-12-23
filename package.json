@@ -1,0 +1,16 @@
+{
+  "name": "aci-clients",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "start": "docker compose up -d",
+    "stop": "docker compose down",
+    "logs": "docker compose logs -f",
+    "ps": "docker compose ps"
+  },
+  "devDependencies": {
+    "turbo": "latest"
+  },
+  "packageManager": "pnpm@10.24.0"
+}

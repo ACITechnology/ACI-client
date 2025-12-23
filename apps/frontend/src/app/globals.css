@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Effet pulse doux et lent pour les halos */
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 0.15;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(1.05);
+  }
+}
+
+/* Appliquer l'animation avec des délais différents pour que ça ne soit pas synchronisé */
+.halo-rose {
+  animation: pulse-glow 7s ease-in-out infinite;
+}
+
+.halo-cyan {
+  animation: pulse-glow 9s ease-in-out infinite;
+}
+
+.halo-violet {
+  animation: pulse-glow 5s ease-in-out infinite;
+}

@@ -29,7 +29,7 @@ export class CompanyService {
     return this.prisma.company.findMany({
       where: {
         nameNormalized: {
-          contains: normalized,
+          startsWith: normalized,
           mode: 'insensitive',
         },
         isActive: true,

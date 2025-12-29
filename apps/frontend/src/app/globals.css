@@ -26,3 +26,29 @@
 .halo-violet {
   animation: pulse-glow 5s ease-in-out infinite;
 }
+
+.gradient-bg::before,
+.gradient-bg::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(150px);
+  z-index: -1;
+  opacity: 0.2;
+}
+
+.gradient-bg::before {
+  background-color: #db2777;
+  width: 400px;
+  height: 400px;
+  right: -100px;
+  bottom: -150px;
+}
+
+.gradient-bg::after {
+  background-color: #7ee2f7;
+  width: 300px;
+  height: 300px;
+  top: -100px;
+  left: -150px;
+}

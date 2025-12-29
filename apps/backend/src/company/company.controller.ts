@@ -1,6 +1,6 @@
 // src/company/company.controller.ts
-import { Controller, Post } from '@nestjs/common';
 import { CompanyService } from './company.service';
+import { Controller, Post, Get, Query } from '@nestjs/common';
 
 @Controller('company')
 export class CompanyController {
@@ -10,5 +10,13 @@ export class CompanyController {
   async sync() {
     await this.companyService.syncCompaniesFromAutotask();
     return { message: 'Synchronisation des entreprises lancée avec succès' };
+  }
+
+  @Get('search')
+  async search(@Query('q') query: string) {
+    if (!query || query.length < 2) {
+      return [];
+    }
+    return this.companyService.searchCompanies(query);
   }
 }

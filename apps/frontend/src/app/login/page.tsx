@@ -10,19 +10,21 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
 
   const router = useRouter();
 
-    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:3001/auth/login', {
-        method: 'POST',
+      const response = await fetch("http://localhost:3001/auth/login", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           email: email.toLowerCase(),
@@ -33,23 +35,67 @@ export default function Login() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.message || 'Email ou mot de passe incorrect');
+        setError(data.message || "Email ou mot de passe incorrect");
         setLoading(false);
         return;
       }
 
       // Succès
-      setError('');
+      setError("");
       setLoading(false);
       // Plus tard : stocker token + redirection
-            // Stockage du token et de l'utilisateur
-      localStorage.setItem('token', data.access_token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      // Stockage du token et de l'utilisateur
+      localStorage.setItem("token", data.access_token);
+      localStorage.setItem("user", JSON.stringify(data.user));
 
-      // Redirection vers l'accueil
-      router.push('/');
+      // Si c'est la première connexion (pas de autotaskContactId) → synchro en cours
+      if (!data.user.autotaskContactId) {
+        setSyncing(true);
+        console.log("Première connexion détectée – début synchro");
+
+        const progressInterval = setInterval(() => {
+          setSyncProgress((prev) => {
+            if (prev >= 90) return 90;
+            return prev + 8;
+          });
+        }, 600);
+
+        const checkInterval = setInterval(() => {
+          const updatedUserStr = localStorage.getItem("user");
+          console.log(
+            "Check synchro – localStorage user :",
+            updatedUserStr ? "Présent" : "Absent"
+          );
+          if (updatedUserStr) {
+            const updatedUser = JSON.parse(updatedUserStr);
+            console.log(
+              "autotaskContactId actuel :",
+              updatedUser.autotaskContactId
+            );
+            if (updatedUser.autotaskContactId) {
+              console.log("Synchro terminée – redirection");
+              clearInterval(progressInterval);
+              clearInterval(checkInterval);
+              setSyncProgress(100);
+              setTimeout(() => router.push("/"), 600);
+            }
+          }
+        }, 1500);
+
+        setTimeout(() => {
+          console.log("Timeout 15s – synchro échouée");
+          clearInterval(progressInterval);
+          clearInterval(checkInterval);
+          setError("Synchronisation trop longue. Veuillez réessayer.");
+          setSyncing(false);
+          setSyncProgress(0);
+        }, 15000);
+      } else {
+        // Connexion classique → redirection immédiate
+        router.push("/");
+      }
     } catch (err) {
-      setError('Erreur réseau — vérifiez que le backend tourne');
+      setError("Erreur réseau — vérifiez que le backend tourne");
       setLoading(false);
       console.error(err);
     }
@@ -132,6 +178,30 @@ export default function Login() {
             Se connecter
           </button>
         </form>
+        {syncing && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+            <div className="bg-gray-900 rounded-2xl p-12 max-w-md w-full text-center">
+              <div className="inline-block animate-spin rounded-full h-16 w-16 border-t-4 border-pink-600 mb-8"></div>
+              <h2 className="text-3xl font-bold text-white mb-4">
+                Synchronisation en cours...
+              </h2>
+              <p className="text-gray-300 text-lg mb-8">
+                Première connexion détectée.
+                <br />
+                Nous configurons votre accès à Autotask.
+              </p>
+              <div className="w-full bg-gray-800 rounded-full h-4">
+                <div
+                  className="bg-pink-600 h-4 rounded-full transition-all duration-1000"
+                  style={{ width: `${syncProgress}%` }}
+                />
+              </div>
+              <p className="text-sm text-gray-500 mt-4">
+                Cela prend généralement quelques secondes
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

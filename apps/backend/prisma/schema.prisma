@@ -67,3 +67,16 @@ model Company {
   @@index([nameNormalized])
   @@map("companies")
 }
+
+model Technician {
+  id        Int      @id
+  firstName String
+  lastName  String
+  fullName  String
+  email     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([id])
+}

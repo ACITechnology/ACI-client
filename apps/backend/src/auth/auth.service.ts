@@ -41,7 +41,7 @@ export class AuthService {
 
     const hashed = await bcrypt.hash(dto.password, 10);
 
-    const user = await this.prisma.user.create({
+    let user = await this.prisma.user.create({
       data: {
         email: dto.email.toLowerCase(),
         password: hashed,
@@ -59,7 +59,7 @@ export class AuthService {
 
     // CONNEXION + SYNCHRO/CREATION CONTACT AUTOTASK
  async login(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({
+    let user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
       include: { company: true }, // on récupère l'entreprise
     });
@@ -70,6 +70,8 @@ export class AuthService {
 
     // Synchro Autotask au premier login
     if (!user.autotaskContactId) {
+      console.log("Première connexion pour", user.email, "- début synchro Autotask");
+
       if (!user.companyId || !user.autotaskCompanyId) {
         throw new BadRequestException('Entreprise non définie');
       }
@@ -79,6 +81,8 @@ export class AuthService {
         user.autotaskCompanyId,
       );
 
+      console.log("Contact trouvé ?", contact ? "Oui (ID: " + contact.id + ")" : "Non");
+
       if (!contact) {
         const newContactId = await this.autotask.createContact({
           email: user.email,
@@ -86,7 +90,7 @@ export class AuthService {
           lastName: user.lastName || 'Portail',
           companyId: user.autotaskCompanyId,
         });
-
+        console.log("Nouveau contact créé – ID:", newContactId);
         contact = { id: newContactId, companyID: user.autotaskCompanyId };
       }
 
@@ -97,9 +101,27 @@ export class AuthService {
           phone: contact.phone || user.phone, // ← on récupère le téléphone si présent
         },
       });
+      console.log("Utilisateur mis à jour en base – autotaskContactId:", contact.id);
+
+            // RECHARGE L'UTILISATEUR DEPUIS LA BASE POUR AVOIR LES DONNÉES À JOUR
+      user = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        include: { company: true },
+      });
+
+      if (!user) {
+        throw new Error('Utilisateur non trouvé après synchro');
+      }
+
+      console.log("Utilisateur rechargé – autotaskContactId:", user.autotaskContactId);
     }
 
-    const payload = { sub: user.id, email: user.email };
+    const payload = { 
+      sub: user.id, 
+      email: user.email,
+      autotaskContactId: user.autotaskContactId,
+      autotaskCompanyId: user.autotaskCompanyId 
+    };
     return {
       access_token: this.jwt.sign(payload),
       user: {
@@ -108,6 +130,8 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         companyName: user.company?.name || 'Inconnu', // ← on récupère depuis la relation
+        autotaskContactId: user.autotaskContactId, // ← AJOUTE ÇA
+    autotaskCompanyId: user.autotaskCompanyId, // ← AJOUTE ÇA
       },
     };
   }

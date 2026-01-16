@@ -1,0 +1,94 @@
+{
+    "items": [
+        {
+            "id": 30619622,
+            "createDateTime": "2025-12-19T14:56:52.490Z",
+            "createdByContactID": null,
+            "creatorResourceID": 4,
+            "description": "Sylvie Gouedart <Sylvie.gouedart@afimes.com>",
+            "impersonatorCreatorResourceID": null,
+            "impersonatorUpdaterResourceID": null,
+            "lastActivityDate": "2025-12-19T14:56:52.490Z",
+            "noteType": 2,
+            "publish": 4,
+            "ticketID": 164376,
+            "title": "Service Desk Notification"
+        },
+        {
+            "id": 30619623,
+            "createDateTime": "2025-12-19T14:56:52.773Z",
+            "createdByContactID": null,
+            "creatorResourceID": 4,
+            "description": "timothe.chominot@acitechnology.fr",
+            "impersonatorCreatorResourceID": null,
+            "impersonatorUpdaterResourceID": null,
+            "lastActivityDate": "2025-12-19T14:56:52.773Z",
+            "noteType": 2,
+            "publish": 4,
+            "ticketID": 164376,
+            "title": "Service Desk Notification"
+        },
+        {
+            "id": 30619624,
+            "createDateTime": "2025-12-19T14:57:12.777Z",
+            "createdByContactID": null,
+            "creatorResourceID": 4,
+            "description": "When a ticket is:\r\nCreated\r\nAnd the following conditions are met:\r\nQueue in list \"Support de Niveau I or Support de Niveau II\"\r\nThen execute the following actions:\r\nSend notification e-mail ([2025] Confirmation Ticket) to Ticket Contact (sylvie.gouedart@afimes.com); Ticket Creator (sylvie.gouedart@afimes.com)\r\nInitiated by Sylvie GOUEDART",
+            "impersonatorCreatorResourceID": null,
+            "impersonatorUpdaterResourceID": null,
+            "lastActivityDate": "2025-12-19T14:57:12.777Z",
+            "noteType": 13,
+            "publish": 1,
+            "ticketID": 164376,
+            "title": "Workflow Rule \"[TICKET] Notification 01 :  Cr\u00e9ation ticket\" fired."
+        },
+        {
+            "id": 30620528,
+            "createDateTime": "2025-12-23T10:17:21.483Z",
+            "createdByContactID": null,
+            "creatorResourceID": 4,
+            "description": "When a ticket is:\r\nTime Added By Autotask Resource\r\nAnd the following conditions are met:\r\nStatus in list \"In Progress or Waiting Customer or Waiting for Supplier or Waiting for Delivery\"\r\nQueue not in list \"[ARCHIV\u00c9] No Notifications or Commercial or Devis\"\r\nThen execute the following actions:\r\nSend notification e-mail (2020_Note) to Additional Contact(s); Assigned Resources (matheo.teneur@acitechnology.fr); Ticket Contact (sylvie.gouedart@afimes.com)\r\nInitiated by Math\u00e9o TENEUR",
+            "impersonatorCreatorResourceID": null,
+            "impersonatorUpdaterResourceID": null,
+            "lastActivityDate": "2025-12-23T10:17:21.483Z",
+            "noteType": 13,
+            "publish": 1,
+            "ticketID": 164376,
+            "title": "Workflow Rule \"2020_Entr\u00e9e_de_temps\" fired."
+        },
+        {
+            "id": 30620737,
+            "createDateTime": "2025-12-23T15:55:34.983Z",
+            "createdByContactID": null,
+            "creatorResourceID": 29682948,
+            "description": "Vanessa VERDEL est en vacances jusqu'au 28/12/2025",
+            "impersonatorCreatorResourceID": null,
+            "impersonatorUpdaterResourceID": null,
+            "lastActivityDate": "2025-12-23T15:55:34.983Z",
+            "noteType": 1,
+            "publish": 2,
+            "ticketID": 164376,
+            "title": ""
+        },
+        {
+            "id": 30622400,
+            "createDateTime": "2025-12-29T10:05:25.027Z",
+            "createdByContactID": null,
+            "creatorResourceID": 4,
+            "description": "When a ticket is:\r\nTime Added By Autotask Resource\r\nAnd the following conditions are met:\r\nStatus in list \"Complete\"\r\nQueue not in list \"[ARCHIV\u00c9] No Notifications or Commercial or Devis\"\r\nThen execute the following actions:\r\nSend notification e-mail (2020_Ticket_compl\u00e9t\u00e9) to Assigned Resources (matheo.teneur@acitechnology.fr); Ticket Contact (sylvie.gouedart@afimes.com)\r\nInitiated by Baudoin FETY",
+            "impersonatorCreatorResourceID": null,
+            "impersonatorUpdaterResourceID": null,
+            "lastActivityDate": "2025-12-29T10:05:25.027Z",
+            "noteType": 13,
+            "publish": 1,
+            "ticketID": 164376,
+            "title": "Workflow Rule \"2020_Ticket_compl\u00e9t\u00e9\" fired."
+        }
+    ],
+    "pageDetails": {
+        "count": 6,
+        "requestCount": 500,
+        "prevPageUrl": null,
+        "nextPageUrl": null
+    }
+}

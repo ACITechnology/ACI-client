@@ -8,22 +8,18 @@ datasource db {
   provider = "postgresql"
 }
 
-// Table des utilisateurs du portail
 model User {
   id                Int      @id @default(autoincrement())
   email             String   @unique
   password          String
-
   firstName         String?
   lastName          String?
-  role              String @default("users")
+  role              String   @default("users")
   phone             String?
 
-  // Relation avec l'entreprise
- company    Company? @relation("CompanyUsers", fields: [companyId], references: [id])
-  companyId  Int?
+  company           Company? @relation("CompanyUsers", fields: [companyId], references: [id])
+  companyId         Int?
 
-  // Rempli automatiquement après création contact
   autotaskContactId Int?
   autotaskCompanyId Int?
 
@@ -32,8 +28,25 @@ model User {
   updatedAt         DateTime @updatedAt
 
   attachments       Attachment[]
+  tickets           Ticket[]        // <-- Relation inverse pour Ticket
+  ticketMessages    TicketMessage[] // <-- Relation inverse pour TicketMessage
 
   @@map("users")
+}
+
+// Table Technician (nom exact conservé pour éviter le drop table)
+model Technician {
+  id        Int      @id
+  firstName String
+  lastName  String
+  fullName  String
+  email     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tickets   Ticket[] // <-- Relation inverse ajoutée
+  @@unique([id])
 }
 
 // Table pour les pièces jointes des tickets
@@ -68,15 +81,74 @@ model Company {
   @@map("companies")
 }
 
-model Technician {
-  id        Int      @id
-  firstName String
-  lastName  String
-  fullName  String
-  email     String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  @@unique([id])
+// Table des tickets
+model Ticket {
+  id                    Int       @id @default(autoincrement())
+  userId                Int
+  
+  // Identifiants Autotask
+  autotaskTicketId      BigInt    @unique
+  contactAutotaskId     BigInt?   // ID du contact Autotask
+  companyAutotaskId     BigInt?   
+  ticketNumber          String    @db.VarChar(50)
+  
+  title                 String
+  description           String?   @db.Text
+  createDate            DateTime
+  status                Int
+  priority              Int?      
+  
+  assignedResourceId    Int?      
+  assignedResourceName  String?
+  
+  lastActivityDate      DateTime?
+  lastSync              DateTime  @default(now()) @updatedAt
+
+  // Relations
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  technician            Technician? @relation(fields: [assignedResourceId], references: [id])
+  messages              TicketMessage[]
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([autotaskTicketId])
+  @@map("tickets")
+}
+
+// Table unique pour la messagerie
+model TicketMessage {
+  id                Int      @id @default(autoincrement())
+  ticketId          Int
+  ticket            Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  // Données sources Autotask
+  autotaskId        BigInt   
+  sourceType        String   @db.VarChar(20) // "note" | "time_entry"
+  messageType       String   @db.VarChar(20) // "user" | "technician"
+
+  // 1. Identité technique Autotask (ResourceID qui a signé l'action)
+  // Sera 29682975 pour tes messages portail ou l'ID du tech
+  apiResourceId     BigInt?  
+
+  // 2. Identité métier (Qui est l'auteur réel sur Autotask)
+  authorAutotaskContactId  BigInt?  // L'ID contact de Sylvie sur Autotask
+
+  // 3. Identité locale (Lien vers ta table User)
+  localUserId       Int?     // L'ID de l'user dans ta table User locale
+  user              User?    @relation(fields: [localUserId], references: [id])
+
+  authorName        String   // Cache du nom pour affichage rapide
+  title             String?  
+  content           String   @db.Text
+  
+  createdAt         DateTime 
+  syncedAt          DateTime @default(now()) @updatedAt
+
+  @@unique([autotaskId, sourceType])
+  @@index([ticketId])
+  @@index([localUserId])
+  @@map("ticket_messages")
 }

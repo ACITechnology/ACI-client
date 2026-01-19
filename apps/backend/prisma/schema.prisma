@@ -46,6 +46,9 @@ model Technician {
   updatedAt DateTime @updatedAt
 
   tickets   Ticket[] // <-- Relation inverse ajoutée
+  ticketMessages TicketMessage[] 
+
+  @@map("technicians")
   @@unique([id])
 }
 
@@ -90,6 +93,7 @@ model Ticket {
   // Identifiants Autotask
   autotaskTicketId      BigInt    @unique
   contactAutotaskId     BigInt?   // ID du contact Autotask
+  authorName            String?
   companyAutotaskId     BigInt?   
   ticketNumber          String    @db.VarChar(50)
   
@@ -121,34 +125,27 @@ model Ticket {
 // Table unique pour la messagerie
 model TicketMessage {
   id                Int      @id @default(autoincrement())
-  ticketId          Int
-  ticket            Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-
-  // Données sources Autotask
-  autotaskId        BigInt   
-  sourceType        String   @db.VarChar(20) // "note" | "time_entry"
-  messageType       String   @db.VarChar(20) // "user" | "technician"
-
-  // 1. Identité technique Autotask (ResourceID qui a signé l'action)
-  // Sera 29682975 pour tes messages portail ou l'ID du tech
-  apiResourceId     BigInt?  
-
-  // 2. Identité métier (Qui est l'auteur réel sur Autotask)
-  authorAutotaskContactId  BigInt?  // L'ID contact de Sylvie sur Autotask
-
-  // 3. Identité locale (Lien vers ta table User)
-  localUserId       Int?     // L'ID de l'user dans ta table User locale
-  user              User?    @relation(fields: [localUserId], references: [id])
-
-  authorName        String   // Cache du nom pour affichage rapide
-  title             String?  
-  content           String   @db.Text
+  autotaskMessageId Int      
+  ticketId          Int      
+  ticket            Ticket   @relation(fields: [ticketId], references: [id])
+  autotaskTicketId  Int      
   
-  createdAt         DateTime 
-  syncedAt          DateTime @default(now()) @updatedAt
+  // Cette colonne devient la Clé Étrangère vers Technician
+  apiResourceId     Int?     
+  technician        Technician? @relation(fields: [apiResourceId], references: [id])
+  
+  authorAutotaskContactId Int?
+  localUserId             Int?     
+  user                    User?    @relation(fields: [localUserId], references: [id])
+  
+  authorName              String?
+  userType                String   // 'user' ou 'technician'
+  title                   String?
+  content                 String   @db.Text
+  sourceType              String   // 'note' ou 'time_entry'
+  createdAt               DateTime
+  syncedAt                DateTime @default(now())
 
-  @@unique([autotaskId, sourceType])
-  @@index([ticketId])
-  @@index([localUserId])
+  @@unique([autotaskMessageId, sourceType])
   @@map("ticket_messages")
 }

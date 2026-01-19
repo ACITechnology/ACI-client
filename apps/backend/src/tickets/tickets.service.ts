@@ -12,196 +12,233 @@ export class TicketsService {
     private prisma: PrismaService,
   ) {}
 
-    // Cache des tickets par utilisateur (clé: contactId_companyId)
   private ticketsCache = new Map<string, { data: any[]; timestamp: number }>();
+  private CACHE_DURATION = 60 * 60 * 1000;
 
-  // Durée du cache en millisecondes (60 minutes = 3600000 ms)
-  private CACHE_DURATION = 60 * 60 * 1000; // Change à 30*60*1000 pour 30 min, etc.
-
-  async getTicketsForUser(contactId: number, companyId: number) {
-        // Clé unique pour cet utilisateur
+  async getTicketsForUser(contactId: number, companyId: number, forceFresh = false) {
     const cacheKey = `tickets_${contactId}_${companyId}`;
+    let cached: { data: any[]; timestamp: number } | null = null; 
 
-    console.log('Récup tickets - cacheKey utilisé :', cacheKey);
-
-    // Vérifie si on a un cache valide
-    const cached = this.ticketsCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
-      console.log(`Tickets pour l'utilisateur ${contactId} chargés depuis le cache`);
-      return cached.data;
-    }
-        // Force le refresh si on vient de créer un ticket (timestamp récent)
-        console.log(`[CACHE DEBUG] Vérification cache pour ${contactId} – clé: ${cacheKey}`);
-
-        if (cached) {
-      const age = Date.now() - cached.timestamp;
-      const ageSec = (age / 1000).toFixed(1);
-      console.log(`[CACHE DEBUG] Cache trouvé – âge: ${ageSec} secondes`);
-
-      if (age < 30000) { // ← 30 secondes (tu peux tester 60000 = 1 min)
-        console.log(`[CACHE DEBUG] Cache récent (<30s) → SUPPRESSION FORCÉE`);
-        this.ticketsCache.delete(cacheKey);
-      } else {
-        console.log(`[CACHE DEBUG] Cache trop vieux → retour direct`);
-        return cached.data;
+    if (!forceFresh) {
+      const entry = this.ticketsCache.get(cacheKey);
+      if (entry) {
+        cached = entry;
+        if (Date.now() - cached.timestamp < this.CACHE_DURATION) return cached.data;
       }
-    } else {
-      console.log(`[CACHE DEBUG] Pas de cache → appel Autotask`);
     }
 
-    const integrationCode = this.configService.get<string>('AUTOTASK_API_INTEGRATION_CODE');
-    const username = this.configService.get<string>('AUTOTASK_USERNAME');
-    const secret = this.configService.get<string>('AUTOTASK_SECRET');
+    if (cached && (Date.now() - cached.timestamp < 30000)) {
+        this.ticketsCache.delete(cacheKey);
+    }
 
+    const headers = { 
+        'ApiIntegrationCode': this.configService.get('AUTOTASK_API_INTEGRATION_CODE'), 
+        'UserName': this.configService.get('AUTOTASK_USERNAME'), 
+        'Secret': this.configService.get('AUTOTASK_SECRET'), 
+        'Content-Type': 'application/json' 
+    };
     const url = 'https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/query';
-
-    const body = {
-      filter: [
-        { op: "eq", field: "CompanyID", value: companyId },
-        { op: "eq", field: "ContactID", value: contactId },
-      ],
-    };
-
-    const headers = {
-      'ApiIntegrationCode': integrationCode,
-      'UserName': username,
-      'Secret': secret,
-      'Content-Type': 'application/json',
-    };
+    const body = { filter: [{ op: "eq", field: "CompanyID", value: companyId }, { op: "eq", field: "ContactID", value: contactId }] };
 
     try {
-  const response = await firstValueFrom(
-    this.httpService.post(url, body, { headers }),
-  );
+      const response = await firstValueFrom(this.httpService.post(url, body, { headers }));
+      const tickets = response.data.items || [];
 
-  const tickets = response.data.items || [];
-
-  // Ajout du nom du technicien pour chaque ticket
-   // Ajout du nom du technicien depuis la base de données
       const ticketsWithNames = await Promise.all(
-    tickets.map(async (ticket: any) => {
-      let assignedResourceName = "Non assigné";
+        tickets.map(async (ticket: any) => {
+          const techResourceId = this.extractHumanResourceId(ticket);
+          const assignedResourceName = await this.getAuthorName(techResourceId);
+          return { ...ticket, assignedResourceName };
+        }),
+      );
 
-      // Liste étendue des ID système (comptes API, monitoring, autotask, etc.)
-      const systemIds = [
-        4, // Autotask Administrator
-        29682909, // API Automaker
-        29682914, // datto rmm
-        29682921, // Backup Radar
-        29682931, // LASTPASS API
-        29682932, // Pax8 API
-        29682936, // DarkWeb ID API
-        29682946, // STREAMONE API
-        29682961, // ZOMMENTUM API
-        29682962, // 3CX API
-        // Ajoute d'autres si tu en vois dans les logs
-      ];
-
-      let resourceId = null;
-
-      // Log pour déboguer chaque ticket
-     // console.log(`Ticket ${ticket.ticketNumber}:`);
-      //console.log(`  assignedResourceID: ${ticket.assignedResourceID}`);
-      //console.log(`  completedByResourceID: ${ticket.completedByResourceID}`);
-      //console.log(`  firstResponseInitiatingResourceID: ${ticket.firstResponseInitiatingResourceID}`);
-      //console.log(`  lastActivityResourceID: ${ticket.lastActivityResourceID}`);
-
-      // 1. Technicien assigné
-      if (ticket.assignedResourceID && !systemIds.includes(ticket.assignedResourceID)) {
-        resourceId = ticket.assignedResourceID;
-      }
-
-      // 2. Celui qui a résolu le ticket
-      if (!resourceId && ticket.completedByResourceID && !systemIds.includes(ticket.completedByResourceID)) {
-        resourceId = ticket.completedByResourceID;
-      }
-
-      // 3. Première réponse
-      if (!resourceId && ticket.firstResponseInitiatingResourceID && !systemIds.includes(ticket.firstResponseInitiatingResourceID)) {
-        resourceId = ticket.firstResponseInitiatingResourceID;
-      }
-
-      // 4. Dernière activité
-      if (!resourceId && ticket.lastActivityResourceID && !systemIds.includes(ticket.lastActivityResourceID)) {
-        resourceId = ticket.lastActivityResourceID;
-      }
-
-      if (resourceId) {
-        const technician = await this.prisma.technician.findUnique({
-          where: { id: resourceId },
-        });
-        if (technician) {
-          assignedResourceName = technician.fullName;
-          //console.log(`  → Technicien trouvé : ${assignedResourceName} (ID: ${resourceId})`);
-        } else {
-          //console.log(`  → Technicien ID ${resourceId} pas dans la base`);
-        }
-      } else {
-       // console.log(`  → Aucun technicien humain trouvé`);
-      }
-
-      return {
-        ...ticket,
-        assignedResourceName,
-      };
-    }),
-  );
-
-      // Stocke les tickets en cache pour 60 minutes
-      this.ticketsCache.set(cacheKey, {
-        data: ticketsWithNames,
-        timestamp: Date.now(),
-      });
-
-      console.log(`Tickets pour l'utilisateur ${contactId} mis en cache pour 60 minutes`);
-  } catch (error) {
-    console.error('Erreur Autotask:', error.response?.data || error.message);
-    throw new Error('Impossible de récupérer les tickets Autotask');
+      this.ticketsCache.set(cacheKey, { data: ticketsWithNames, timestamp: Date.now() });
+      return ticketsWithNames;
+    } catch (error) {
+      throw new Error('Impossible de récupérer les tickets Autotask');
+    }
   }
-} 
+
+  private extractHumanResourceId(ticket: any): number | null {
+    const systemIds = [4, 29682909, 29682914, 29682921, 29682931, 29682932, 29682936, 29682946, 29682961, 29682962];
+    const candidates = [
+      ticket.assignedResourceID,
+      ticket.completedByResourceID,
+      ticket.firstResponseInitiatingResourceID,
+      ticket.lastActivityResourceID
+    ];
+    return candidates.find(id => id && !systemIds.includes(id)) || null;
+  }
 
   async createTicketForUser(contactId: number, companyId: number, title: string, description: string) {
-    const integrationCode = this.configService.get<string>('AUTOTASK_API_INTEGRATION_CODE');
-    const username = this.configService.get<string>('AUTOTASK_USERNAME');
-    const secret = this.configService.get<string>('AUTOTASK_SECRET');
-
     const url = 'https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets';
-
-    const body = {
-      companyID: companyId,
-      contactID: contactId,
-      title: title,
-      description: description,
-      queueID: 29682833,
-      status: 1,
-      priority: 3,
-      source: -1,
-      ticketType: 1,
-      billingCodeID: 29682801,
+    const body = { companyID: companyId, contactID: contactId, title, description, queueID: 29682833, status: 1, priority: 3, source: -1, ticketType: 1, billingCodeID: 29682801 };
+    const headers = { 
+        'ApiIntegrationCode': this.configService.get('AUTOTASK_API_INTEGRATION_CODE'), 
+        'UserName': this.configService.get('AUTOTASK_USERNAME'), 
+        'Secret': this.configService.get('AUTOTASK_SECRET'), 
+        'Content-Type': 'application/json' 
     };
 
-    const headers = {
-      'ApiIntegrationCode': integrationCode,
-      'UserName': username,
-      'Secret': secret,
-      'Content-Type': 'application/json',
+    const response = await firstValueFrom(this.httpService.post(url, body, { headers }));
+    this.ticketsCache.delete(`tickets_${contactId}_${companyId}`);
+    return response.data;
+  }
+
+  private async getAuthorName(resourceId: number | null) {
+    if (!resourceId) return "Non assigné";
+    const tech = await this.prisma.technician.findUnique({ where: { id: resourceId }, select: { fullName: true } });
+    return tech?.fullName || "Inconnu";
+  }
+
+  // --- LOGIQUE DE SYNCHRO CORRIGÉE ---
+  async syncTicketsAndMessagesForUser(userId: number, contactId: number, companyId: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { autotaskContactId: true, firstName: true, lastName: true },
+    });
+    if (!user) throw new Error('User not found for sync');
+
+    const authorFullName = `${user.firstName} ${user.lastName}`;
+    const userDisplayLabel = `[user]: ${authorFullName}`;
+
+    const headers = { 
+        'ApiIntegrationCode': this.configService.get('AUTOTASK_API_INTEGRATION_CODE'), 
+        'UserName': this.configService.get('AUTOTASK_USERNAME'), 
+        'Secret': this.configService.get('AUTOTASK_SECRET'),
+        'Content-Type': 'application/json'
     };
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.post(url, body, { headers }),
-      );
-       // Invalide directement le cache de cet utilisateur après création
-    const cacheKey = `tickets_${contactId}_${companyId}`;
-    console.log('Création ticket - cacheKey invalidé :', cacheKey);
-    this.ticketsCache.delete(cacheKey);
-    
-      return response.data; // Renvoie le ticket créé par Autotask
-         
+      const ticketsUrl = 'https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/query';
+      const ticketsBody = { filter: [{ op: "eq", field: "CompanyID", value: companyId }, { op: "eq", field: "ContactID", value: contactId }] };
+      const ticketsResp = await firstValueFrom(this.httpService.post(ticketsUrl, ticketsBody, { headers }));
+      const freshTickets = ticketsResp.data.items || [];
+
+      for (const ticket of freshTickets) {
+        const techResourceId = this.extractHumanResourceId(ticket);
+        const techName = await this.getAuthorName(techResourceId);
+
+        const localTicket = await this.prisma.ticket.upsert({
+          where: { autotaskTicketId: ticket.id },
+          update: {
+            title: ticket.title,
+            description: ticket.description,
+            status: ticket.status,
+            priority: ticket.priority,
+            authorName: authorFullName,
+            assignedResourceId: techResourceId,
+            assignedResourceName: techName,
+            lastActivityDate: ticket.lastActivityDate,
+            lastSync: new Date(),
+          },
+          create: {
+            userId,
+            autotaskTicketId: ticket.id,
+            ticketNumber: ticket.ticketNumber,
+            title: ticket.title,
+            description: ticket.description,
+            createDate: ticket.createDate,
+            status: ticket.status,
+            priority: ticket.priority,
+            companyAutotaskId: companyId,
+            contactAutotaskId: contactId,
+            authorName: authorFullName,
+            assignedResourceId: techResourceId,
+            assignedResourceName: techName,
+            lastActivityDate: ticket.lastActivityDate,
+          },
+        });
+
+        // Récupération Notes et TimeEntries
+        const notesUrl = `https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/${ticket.id}/Notes`;
+        const timeUrl = 'https://webservices16.autotask.net/ATServicesRest/V1.0/TimeEntries/query';
+        
+        const [notesResp, timeResp] = await Promise.all([
+          firstValueFrom(this.httpService.get(notesUrl, { headers })),
+          firstValueFrom(this.httpService.post(timeUrl, { filter: [{ op: "eq", field: "ticketID", value: ticket.id }] }, { headers }))
+        ]);
+
+        const notes = notesResp.data.items || [];
+        const timeEntries = timeResp.data.items || [];
+
+        // Synchro des Notes (avec récupération des IDs manquants)
+        for (const note of notes) {
+          if (note.publish === 1 && note.noteType !== 13) {
+            const resId = note.creatorResourceID;
+            const isUser = (Number(resId) === 29682975 || Number(resId) === Number(user.autotaskContactId));
+            
+            let finalAuthorName = "Inconnu";
+            let localUserId: number | null = null;
+let authorAutotaskContactId: number | null = null;
+
+            if (isUser) {
+                finalAuthorName = userDisplayLabel;
+                localUserId = userId;
+                authorAutotaskContactId = user.autotaskContactId;
+            } else if (resId) {
+                finalAuthorName = await this.getAuthorName(resId);
+            }
+
+            await this.prisma.ticketMessage.upsert({
+              where: { autotaskMessageId_sourceType: { autotaskMessageId: note.id, sourceType: 'note' } },
+              update: {
+                content: note.description,
+                authorName: finalAuthorName,
+                userType: isUser ? 'user' : 'technician',
+                apiResourceId: resId || null, // On remet l'ID technicien ici
+                authorAutotaskContactId: authorAutotaskContactId,
+                localUserId: localUserId,
+                syncedAt: new Date(),
+              },
+              create: {
+                ticketId: localTicket.id,
+                autotaskTicketId: Number(ticket.id),
+                autotaskMessageId: note.id,
+                sourceType: 'note',
+                userType: isUser ? 'user' : 'technician',
+                authorName: finalAuthorName,
+                apiResourceId: resId || null, // On remet l'ID technicien ici
+                authorAutotaskContactId: authorAutotaskContactId,
+                localUserId: localUserId,
+                title: note.title,
+                content: note.description,
+                createdAt: note.createDateTime,
+              },
+            });
+          }
+        }
+
+        // Synchro des TimeEntries
+        for (const entry of timeEntries) {
+          const resId = entry.resourceID;
+          const techNameEntry = await this.getAuthorName(resId);
+          const duration = entry.hoursWorked ? `[Durée: ${entry.hoursWorked}h] ` : '';
+          
+          await this.prisma.ticketMessage.upsert({
+            where: { autotaskMessageId_sourceType: { autotaskMessageId: entry.id, sourceType: 'time_entry' } },
+            update: {
+              content: `${duration}${entry.summaryNotes || ''}`,
+              authorName: techNameEntry,
+              apiResourceId: resId || null, // On remet l'ID technicien ici
+              syncedAt: new Date(),
+            },
+            create: {
+              ticketId: localTicket.id,
+              autotaskTicketId: Number(ticket.id),
+              autotaskMessageId: entry.id,
+              sourceType: 'time_entry',
+              userType: 'technician',
+              authorName: techNameEntry,
+              apiResourceId: resId || null, // On remet l'ID technicien ici
+              content: `${duration}${entry.summaryNotes || ''}`,
+              createdAt: entry.startDateTime,
+            },
+          });
+        }
+      }
     } catch (error) {
-      console.error('Erreur création Autotask:', error.response?.data || error.message);
-      throw new Error('Impossible de créer le ticket Autotask');
+      console.error(`[SYNC] Erreur:`, error);
     }
   }
-
-} 
+}

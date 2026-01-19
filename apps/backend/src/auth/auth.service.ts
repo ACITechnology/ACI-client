@@ -11,6 +11,7 @@ import { AutotaskService } from '../autotask/autotask.service';
 import * as bcrypt from 'bcrypt';
 import { RegisterDto, LoginDto } from './dto/auth.dto';
 import { CompanyService } from '../company/company.service';
+import { TicketsService } from '../tickets/tickets.service';
 
 @Injectable()
 export class AuthService {
@@ -19,6 +20,7 @@ export class AuthService {
     private jwt: JwtService,
     private autotask: AutotaskService,
     private company: CompanyService,
+    private ticketsService: TicketsService,
   ) {}
 
   // INSCRIPTION – admin seulement (on mettra un guard plus tard)
@@ -67,6 +69,14 @@ export class AuthService {
     if (!user || !(await bcrypt.compare(dto.password, user.password))) {
       throw new UnauthorizedException('Email ou mot de passe incorrect');
     }
+
+    if (user.autotaskContactId && user.company?.autotaskId) {
+    await this.ticketsService.syncTicketsAndMessagesForUser(
+      user.id,
+      user.autotaskContactId,
+      user.company.autotaskId,
+    );
+  }
 
     // Synchro Autotask au premier login
     if (!user.autotaskContactId) {

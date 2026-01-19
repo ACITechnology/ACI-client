@@ -1,10 +1,11 @@
 // src/company/company.service.ts
-import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import axios from 'axios';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 
 @Injectable()
-export class CompanyService {
+export class CompanyService implements OnModuleInit{
   private readonly logger = new Logger(CompanyService.name);
 
    // TES CLÉS AUTOTASK (on les mettra dans .env plus tard)
@@ -15,6 +16,11 @@ export class CompanyService {
     Secret: 'Seb12345!',
     'Content-Type': 'application/json',
   };
+
+  async onModuleInit() {
+    this.logger.log('Démarrage initial : synchronisation des entreprises Autotask');
+    await this.syncCompaniesFromAutotask();
+  }
 
   constructor(private prisma: PrismaService) {}
 
@@ -99,5 +105,11 @@ export class CompanyService {
     } catch (error) {
       this.logger.error('Erreur lors de la synchro Autotask', error.response?.data || error.message);
     }
+  }
+
+    @Cron('0 4 * * *') // ← tous les jours à 4h00
+  async syncDaily() {
+    this.logger.log('Cron quotidien : synchronisation des entreprises Autotask');
+    await this.syncCompaniesFromAutotask();
   }
 }

@@ -15,7 +15,8 @@ interface Ticket {
 export default function TicketsPage() {
   const [user, setUser] = useState<any>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // Chargement initial de la page
+  const [isCreating, setIsCreating] = useState(false); // Chargement spécifique au bouton "Créer"
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [ticketTitle, setTicketTitle] = useState("");
   const [ticketDescription, setTicketDescription] = useState("");
@@ -24,15 +25,11 @@ export default function TicketsPage() {
   const ticketsPerPage = 6;
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Calcul des tickets à afficher sur la page actuelle
   const indexOfLastTicket = currentPage * ticketsPerPage;
   const indexOfFirstTicket = indexOfLastTicket - ticketsPerPage;
   const currentTickets = tickets.slice(indexOfFirstTicket, indexOfLastTicket);
-
-  // Calcul du nombre total de pages
   const totalPages = Math.ceil(tickets.length / ticketsPerPage);
 
-  // Génère les numéros de page (ex: [1, 2, 3])
   const pageNumbers = [];
   for (let i = 1; i <= totalPages; i++) {
     pageNumbers.push(i);
@@ -51,86 +48,96 @@ export default function TicketsPage() {
     }
   }, [router]);
 
-  // Déplace cette fonction en dehors du useEffect
-  const fetchTickets = async () => {
-    let attempts = 0;
-    const maxAttempts = 3;
-
-    while (attempts < maxAttempts) {
-      try {
-        const token = localStorage.getItem("token");
-        const res = await fetch("http://localhost:3001/tickets", {
-          cache: "no-store",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (res.status === 401 || res.status === 500) {
-          attempts++;
-          console.log(`Tentative ${attempts} échouée, retry dans 1s...`);
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          continue;
-        }
-
-        if (!res.ok) throw new Error("Erreur API");
-
-        const data = await res.json();
-        const sortedTickets = (data.tickets || []).sort(
-          (a: Ticket, b: Ticket) =>
-            new Date(b.createDate).getTime() - new Date(a.createDate).getTime()
-        );
-
-        setTickets(sortedTickets);
-        setLoading(false);
-        return;
-      } catch (err) {
-        attempts++;
-        if (attempts >= maxAttempts) {
-          console.error("Erreur définitive fetch tickets :", err);
-          setLoading(false);
-        } else {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-      }
+  // Fallback si la DB est vide ou en erreur
+  const fetchTicketsFromApi = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("http://localhost:3001/tickets", {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Erreur API");
+      const data = await res.json();
+      setTickets(data.tickets || []);
+    } catch (err) {
+      console.error("Erreur fetch tickets API :", err);
     }
   };
 
-  // Appelle-la au montage
+  const loadTicketsFromDb = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const userData = JSON.parse(localStorage.getItem("user") || "{}");
+
+      //console.log("[FRONT] Tentative de chargement DB...");
+      //console.log("[FRONT] Token présent :", !!token);
+      //console.log("[FRONT] User ID envoyé :", userData.id);
+
+      if (!token) {
+        console.warn("[FRONT] Aucun token trouvé dans le localStorage");
+        router.push("/login");
+        return;
+      }
+
+      const res = await fetch("http://localhost:3001/tickets/db", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ userId: userData.id }),
+      });
+
+      //console.log("[FRONT] Statut réponse serveur :", res.status);
+
+      if (res.status === 401) {
+        console.error("[FRONT] Erreur 401 : Token invalide ou expiré");
+        localStorage.removeItem("token");
+        router.push("/login");
+        return;
+      }
+
+      if (!res.ok) throw new Error(`Erreur DB (Status: ${res.status})`);
+
+      const dbTickets = await res.json();
+      //console.log("[FRONT] Données reçues brutes :", dbTickets);
+
+      const ticketsArray = Array.isArray(dbTickets)
+        ? dbTickets
+        : dbTickets.tickets || [];
+      //console.log("[FRONT] Nombre de tickets traités :", ticketsArray.length);
+
+      const sortedTickets = ticketsArray.sort(
+        (a: Ticket, b: Ticket) =>
+          new Date(b.createDate).getTime() - new Date(a.createDate).getTime()
+      );
+
+      setTickets(sortedTickets);
+    } catch (err) {
+      console.error("[FRONT] Erreur critique dans loadTicketsFromDb :", err);
+      await fetchTicketsFromApi();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetchTickets();
+    if (user) loadTicketsFromDb();
   }, [user]);
 
   const getStatusText = (status: number) => {
     if (status === 5) return "Résolu";
     if (status === 26) return "En cours";
-    return "Inconnu";
-  };
-
-  const getStatusColor = (status: number) => {
-    if (status === 5) return "text-green-400";
-    if (status === 26) return "text-yellow-400";
-    return "text-gray-400";
-  };
-
-  const getProgressHours = (createDate: string) => {
-    const creationTime = new Date(createDate).getTime();
-    const now = Date.now();
-    const elapsedMinutes = (now - creationTime) / (1000 * 60);
-    const hours = Math.min(Math.floor(elapsedMinutes / 60), 8);
-    return `${hours}/8 heures`;
+    return "Nouveau";
   };
 
   const getProgressPercentage = (createDate: string) => {
     const creationTime = new Date(createDate).getTime();
-    const now = Date.now();
-    const elapsedMinutes = (now - creationTime) / (1000 * 60);
-    const totalMinutes = 480;
-    const percentage = Math.min((elapsedMinutes / totalMinutes) * 100, 100);
-    return Math.round(percentage);
+    const elapsedMinutes = (Date.now() - creationTime) / (1000 * 60);
+    return Math.min(Math.round((elapsedMinutes / 480) * 100), 100);
   };
 
-  // Protection finale : si pas d'utilisateur → rien à afficher
   if (!user) return null;
 
   return (
@@ -146,7 +153,7 @@ export default function TicketsPage() {
       </div>
 
       {loading ? (
-        <p className="text-center text-xl text-gray-400 py-20">
+        <p className="text-center text-xl text-gray-400 py-20 animate-pulse">
           Chargement des tickets...
         </p>
       ) : tickets.length === 0 ? (
@@ -161,31 +168,26 @@ export default function TicketsPage() {
                 key={ticket.id}
                 className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-8 hover:border-pink-500/50 hover:bg-white/8 transition min-h-80 flex flex-col"
               >
-                {/* Haut : ID + Date */}
                 <div className="flex justify-between items-start mb-4">
                   <p className="text-sm text-gray-400">
-                    ID: {ticket.ticketNumber}
+                    #{ticket.ticketNumber}
                   </p>
                   <p className="text-sm text-gray-400">
-                    Créé le{" "}
                     {new Date(ticket.createDate).toLocaleDateString("fr-FR")}
                   </p>
                 </div>
 
-                {/* Titre centré */}
                 <h3 className="text-2xl font-semibold text-white text-center mb-6 flex-1">
                   {ticket.title}
                 </h3>
 
-                {/* Technicien + trait */}
                 <div className="text-center mb-8">
                   <p className="text-sm text-gray-400">
-                    Technicien : {ticket.assignedResourceName || "Non assigné"}
+                    Technicien : {ticket.assignedResourceName || "En attente"}
                   </p>
                   <div className="h-px bg-gray-700 mt-6" />
                 </div>
 
-                {/* Bas : statut + barre */}
                 <div className="mt-auto">
                   <div className="flex items-center justify-center gap-3 mb-4">
                     <div
@@ -204,32 +206,25 @@ export default function TicketsPage() {
                     </span>
                   </div>
 
-                  <div className="w-full">
-                    <div className="bg-gray-800 rounded-full h-4">
-                      <div
-                        className="bg-pink-600 h-4 rounded-full transition-all duration-1000"
-                        style={{
-                          width: `${getProgressPercentage(ticket.createDate)}%`,
-                        }}
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500 text-right mt-2">
-                      {getProgressHours(ticket.createDate)}
-                    </p>
+                  <div className="bg-gray-800 rounded-full h-3">
+                    <div
+                      className="bg-pink-600 h-3 rounded-full transition-all duration-1000"
+                      style={{
+                        width: `${getProgressPercentage(ticket.createDate)}%`,
+                      }}
+                    />
                   </div>
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Pagination */}
-
           <div className="flex justify-center gap-4 mt-12">
             {pageNumbers.map((number) => (
               <button
                 key={number}
                 onClick={() => setCurrentPage(number)}
-                className={`px-4 py-2 rounded-lg font-medium transition ${
+                className={`px-4 py-2 rounded-lg ${
                   currentPage === number
                     ? "bg-pink-600 text-white"
                     : "bg-gray-800 text-gray-400 hover:bg-gray-700"
@@ -241,183 +236,105 @@ export default function TicketsPage() {
           </div>
         </>
       )}
+
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
-          <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-lg border border-pink-500/30 shadow-2xl">
-            {/* Titre du modal */}
-            <h2 className="text-2xl font-bold text-white mb-6 text-center">
-              Créer un nouveau ticket
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-lg border border-white/10 shadow-2xl">
+            <h2 className="text-2xl font-bold text-white mb-6">
+              Nouveau Ticket
             </h2>
 
-            {/* Champ Titre */}
-            <div className="mb-6">
-              <label className="block text-gray-300 mb-2 text-sm font-medium">
-                Titre du ticket *
-              </label>
-              <input
-                type="text"
-                value={ticketTitle}
-                onChange={(e) => setTicketTitle(e.target.value)}
-                placeholder="Ex: Problème connexion VPN"
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-pink-500 transition"
-                required
-              />
+            <div className="space-y-6">
+              <div>
+                <label className="block text-gray-400 mb-2 text-sm">
+                  Titre
+                </label>
+                <input
+                  type="text"
+                  value={ticketTitle}
+                  onChange={(e) => setTicketTitle(e.target.value)}
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:border-pink-500 outline-none transition"
+                  placeholder="Problème..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-gray-400 mb-2 text-sm">
+                  Description
+                </label>
+                <textarea
+                  value={ticketDescription}
+                  onChange={(e) => setTicketDescription(e.target.value)}
+                  rows={4}
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:border-pink-500 outline-none transition resize-none"
+                  placeholder="Détails..."
+                />
+              </div>
             </div>
 
-            {/* Champ Description */}
-            <div className="mb-8">
-              <label className="block text-gray-300 mb-2 text-sm font-medium">
-                Description détaillée *
-              </label>
-              <textarea
-                value={ticketDescription}
-                onChange={(e) => setTicketDescription(e.target.value)}
-                placeholder="Décrivez votre problème en détail..."
-                rows={6}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-pink-500 transition resize-none"
-                required
-              />
-            </div>
-
-            {/* Boutons */}
-            <div className="flex justify-end gap-4">
+            <div className="flex justify-end gap-4 mt-8">
               <button
+                disabled={isCreating}
                 onClick={() => {
                   setIsModalOpen(false);
                   setTicketTitle("");
                   setTicketDescription("");
                 }}
-                className="px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-white transition"
+                className="px-6 py-3 text-gray-400 hover:text-white transition disabled:opacity-50"
               >
                 Annuler
               </button>
               <button
+                disabled={
+                  isCreating || !ticketTitle.trim() || !ticketDescription.trim()
+                }
                 onClick={async () => {
-                  // Vérifie que les champs ne sont pas vides
-                  if (!ticketTitle.trim() || !ticketDescription.trim()) {
-                    alert("Veuillez remplir le titre et la description !");
-                    return;
-                  }
-
-                  // 1. Créer ticket temporaire
-                  const tempTicket: Ticket = {
-                    id: Date.now(), // ID temporaire
-                    ticketNumber: "TEMP-" + Date.now(),
-                    title: ticketTitle,
-                    createDate: new Date().toISOString(),
-                    assignedResourceName: "En attente",
-                    status: 1,
-                  };
-
-                  // 2. Ajouter immédiatement à la liste (optimistic)
-                  setTickets([tempTicket, ...tickets]);
-
-                  // 3. Continuer avec la requête au backend
-
+                  setIsCreating(true);
                   try {
-                    // Récupère le token depuis localStorage
                     const token = localStorage.getItem("token");
+                    const res = await fetch("http://localhost:3001/tickets", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                      },
+                      // On envoie le userId pour que le backend sache à qui lier le ticket en DB locale
+                      body: JSON.stringify({
+                        title: ticketTitle,
+                        description: ticketDescription,
+                        userId: user.id,
+                      }),
+                    });
 
-                    // Envoie au backend
-                    const response = await fetch(
-                      "http://localhost:3001/tickets",
-                      {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                          Authorization: `Bearer ${token}`,
-                        },
-                        body: JSON.stringify({
-                          title: ticketTitle,
-                          description: ticketDescription,
-                        }),
-                      }
-                    );
+                    if (!res.ok) throw new Error("Erreur lors de la création");
 
-                    if (!response.ok) {
-                      const errorData = await response.json();
-                      throw new Error(
-                        errorData.message || "Erreur lors de la création"
-                      );
-                    }
+                    const responseData = await res.json();
+                    const newTicket = responseData.data; // On récupère le ticket créé renvoyé par le backend
 
-                    const data = await response.json();
-                    console.log("Réponse backend création :", data);
-                    console.log(
-                      "[FRONT DEBUG] Tickets reçus du backend :",
-                      data.tickets
-                    );
+                    // --- OPTIMISATION : MISE À JOUR IMMÉDIATE DE L'INTERFACE ---
+                    // On ajoute le nouveau ticket au début de la liste sans refaire de requête fetch
+                    setTickets((prevTickets) => [newTicket, ...prevTickets]);
 
-                    alert("Ticket créé avec succès !");
-
-                    // Rafraîchissement avec retry
-                    let newTickets = [];
-                    for (let attempt = 1; attempt <= 5; attempt++) {
-                      console.log(
-                        `[FRONT] Tentative ${attempt} pour rafraîchir les tickets`
-                      );
-                      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-                      const res = await fetch("http://localhost:3001/tickets", {
-                        cache: "no-store",
-                        headers: { Authorization: `Bearer ${token}` },
-                      });
-
-                      const freshData = await res.json();
-                      console.log(
-                        "[FRONT] Tickets frais tentative",
-                        attempt,
-                        ":",
-                        freshData.tickets
-                      );
-
-                      if (freshData.tickets && freshData.tickets.length > 0) {
-                        newTickets = freshData.tickets;
-                        break;
-                      }
-                    }
-
-                    if (newTickets.length > 0) {
-                      // Remplacer le temporaire par les vrais tickets
-                      const updatedTickets = newTickets.map(
-                        (ticket: Ticket) => {
-                          if (
-                            ticket.title === ticketTitle &&
-                            ticket.createDate.includes(
-                              new Date().toISOString().slice(0, 10)
-                            )
-                          ) {
-                            return ticket; // le vrai ticket
-                          }
-                          return ticket;
-                        }
-                      );
-                      setTickets(updatedTickets);
-                      setNewTicketTemp(null); // ← on supprime le temporaire
-                      console.log(
-                        "[FRONT] Ticket temporaire remplacé par le vrai"
-                      );
-                    } else {
-                      alert(
-                        "Ticket créé, mais pas encore visible. Rafraîchissez la page dans quelques secondes."
-                      );
-                    }
-
+                    // On ferme la modale et on vide les champs
+                    setIsModalOpen(false);
                     setTicketTitle("");
                     setTicketDescription("");
-                    setIsModalOpen(false);
-                  } catch (error) {
-                    console.error("Erreur création ticket :", error);
-                    alert(
-                      "Erreur : " +
-                        (error.message || "Impossible de créer le ticket")
-                    );
+                  } catch (error: any) {
+                    alert(error.message);
+                  } finally {
+                    setIsCreating(false);
                   }
                 }}
-                className="px-6 py-3 bg-pink-600 hover:bg-pink-700 rounded-lg text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!ticketTitle.trim() || !ticketDescription.trim()}
+                className="px-8 py-3 bg-pink-600 hover:bg-pink-700 rounded-xl text-white font-bold transition disabled:opacity-50 flex items-center gap-2"
               >
-                Créer le ticket
+                {isCreating ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                    Création...
+                  </>
+                ) : (
+                  "Créer le ticket"
+                )}
               </button>
             </div>
           </div>

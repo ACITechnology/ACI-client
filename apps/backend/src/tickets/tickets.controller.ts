@@ -57,4 +57,20 @@ async getTickets(@Req() req: Request) {
       data: ticket,
     };
   }
+
+
+@Post('db')
+@UseGuards(JwtAuthGuard)
+async getTicketsFromDb(@Req() req: Request, @Body() body: any) {
+  const user = req.user as any;
+
+  // On vérifie 'userId' au lieu de 'sub' car c'est ce que contient votre token
+  if (!user || !user.userId) { 
+    //console.error("[BACK] Erreur : L'utilisateur n'a pas de 'userId' dans son token");
+    throw new UnauthorizedException('Utilisateur non identifié dans le token');
+  }
+
+  const userId = user.userId; 
+  return await this.ticketsService.getUserTicketsFromDb(userId);
+}
 }

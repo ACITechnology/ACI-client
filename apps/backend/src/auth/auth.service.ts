@@ -70,13 +70,13 @@ export class AuthService {
       throw new UnauthorizedException('Email ou mot de passe incorrect');
     }
 
-    if (user.autotaskContactId && user.company?.autotaskId) {
-    await this.ticketsService.syncTicketsAndMessagesForUser(
-      user.id,
-      user.autotaskContactId,
-      user.company.autotaskId,
-    );
-  }
+  //   if (user.autotaskContactId && user.company?.autotaskId) {
+  //   await this.ticketsService.syncTicketsAndMessagesForUser(
+  //     user.id,
+  //     user.autotaskContactId,
+  //     user.company.autotaskId,
+  //   );
+  // }
 
     // Synchro Autotask au premier login
     if (!user.autotaskContactId) {
@@ -145,4 +145,28 @@ export class AuthService {
       },
     };
   }
+
+  async getFreshUser(userId: number) {
+  // 1. On récupère l'utilisateur
+  const user = await this.prisma.user.findUnique({
+    where: { id: userId },
+    include: { company: true },
+  });
+
+  // 2. Correction Erreur TS18047: 'user' is possibly 'null'
+  // On vérifie si l'utilisateur existe vraiment avant de continuer
+  if (!user) {
+    throw new NotFoundException('Utilisateur non trouvé');
+  }
+
+  // 3. Correction Erreur TS2339: Property 'password'
+  // On extrait le mot de passe pour ne pas le renvoyer au frontend
+  const { password, ...result } = user;
+
+  // 4. On renvoie l'objet propre
+  return {
+    ...result,
+    companyName: user.company?.name || 'Inconnu'
+  };
+}
 }

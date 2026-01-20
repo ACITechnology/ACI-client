@@ -1,7 +1,6 @@
 // apps/frontend/src/app/login/page.tsx
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -21,88 +20,104 @@ export default function Login() {
     setLoading(true);
 
     try {
+      // 1. Authentification
       const response = await fetch("http://localhost:3001/auth/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: email.toLowerCase(),
-          password,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.toLowerCase(), password }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.message || "Email ou mot de passe incorrect");
+        setError(data.message || "Identifiants incorrects");
         setLoading(false);
         return;
       }
 
-      // Succès
-      setError("");
-      setLoading(false);
-      // Plus tard : stocker token + redirection
-      // Stockage du token et de l'utilisateur
+      // Stockage initial
+      // Debug Etape 1
+      console.log("1. Réponse Login reçue:", data);
+
+      // Stockage initial
       localStorage.setItem("token", data.access_token);
       localStorage.setItem("user", JSON.stringify(data.user));
+      
+      console.log("2. LocalStorage après Login:", {
+        token: localStorage.getItem("token"),
+        user: localStorage.getItem("user")
+      });
 
-      // Si c'est la première connexion (pas de autotaskContactId) → synchro en cours
-      if (!data.user.autotaskContactId) {
-        setSyncing(true);
-        console.log("Première connexion détectée – début synchro");
-
-        const progressInterval = setInterval(() => {
-          setSyncProgress((prev) => {
-            if (prev >= 90) return 90;
-            return prev + 8;
-          });
-        }, 600);
-
-        const checkInterval = setInterval(() => {
-          const updatedUserStr = localStorage.getItem("user");
-          console.log(
-            "Check synchro – localStorage user :",
-            updatedUserStr ? "Présent" : "Absent"
-          );
-          if (updatedUserStr) {
-            const updatedUser = JSON.parse(updatedUserStr);
-            console.log(
-              "autotaskContactId actuel :",
-              updatedUser.autotaskContactId
-            );
-            if (updatedUser.autotaskContactId) {
-              console.log("Synchro terminée – redirection");
-              clearInterval(progressInterval);
-              clearInterval(checkInterval);
-              setSyncProgress(100);
-              setTimeout(() => router.push("/"), 600);
-            }
-          }
-        }, 1500);
-
-        setTimeout(() => {
-          console.log("Timeout 15s – synchro échouée");
-          clearInterval(progressInterval);
-          clearInterval(checkInterval);
-          setError("Synchronisation trop longue. Veuillez réessayer.");
-          setSyncing(false);
-          setSyncProgress(0);
-        }, 15000);
-      } else {
-        // Connexion classique → redirection immédiate
-        router.push("/");
-      }
-    } catch (err) {
-      setError("Erreur réseau — vérifiez que le backend tourne");
+      // 2. Déclenchement de la Synchronisation
       setLoading(false);
-      console.error(err);
+      setSyncing(true);
+      setSyncProgress(5);
+
+      // On simule une progression au début pour montrer qu'il se passe quelque chose
+      // REMPLACE TON INTERVAL PAR CELUI-CI :
+const fakeProgress = setInterval(() => {
+  setSyncProgress(prev => {
+    if (prev < 99) {
+      // Ralentit mathématiquement plus on approche de 99
+      const step = (99 - prev) / 30; 
+      return prev + (step < 0.1 ? 0.1 : step);
+    }
+    return prev;
+  });
+}, 200); // Plus rapide (200ms) pour une fluidité maximale
+
+      try {
+        // AJOUTE CETTE MICRO-PAUSE ICI
+        await new Promise(resolve => setTimeout(resolve, 100));
+        // APPEL RÉEL AU BACKEND POUR SYNCHRONISER
+        // On utilise la nouvelle route Delta Sync
+        const syncResp = await fetch("http://localhost:3001/auth/sync-status", {
+          method: "POST",
+          headers: { 
+            "Authorization": `Bearer ${data.access_token}`,
+            "Content-Type": "application/json" 
+          }
+        });
+
+        clearInterval(fakeProgress);
+
+        if (syncResp.ok) {
+          setSyncProgress(100);
+          const updatedData = await syncResp.json();
+          
+          console.log("3. Données de synchro reçues:", updatedData);
+
+          // On met à jour l'utilisateur
+          if (updatedData.user) {
+            localStorage.setItem("user", JSON.stringify(updatedData.user));
+            console.log("4. LocalStorage mis à jour avec User synchro:", localStorage.getItem("user"));
+          }
+
+          // Redirection
+          setTimeout(() => {
+            console.log("5. Tentative de redirection vers /");
+            // router.push("/") ne rafraîchit pas les composants parents (Header)
+            // Si le header bug, utilise window.location.href = "/" à la place
+            window.location.href = "/"; 
+          }, 500);
+        } else {
+          throw new Error("Erreur synchro");
+        }
+      } catch (err) {
+        clearInterval(fakeProgress);
+        setError("La synchronisation a échoué, mais vous pouvez essayer de continuer.");
+        setSyncing(false);
+        setTimeout(() => router.push("/"), 2000);
+      }
+
+    } catch (err) {
+      setError("Erreur réseau");
+      setLoading(false);
     }
   };
 
   return (
-    <div className="w-full max-w-md">
+    <div className="w-full max-w-md mx-auto">
       <div className="text-center mb-8">
         <div className="text-center mb-10">
           <h1 className="text-4xl font-bold text-white mb-4">Connexion</h1>
@@ -178,31 +193,40 @@ export default function Login() {
             Se connecter
           </button>
         </form>
-        {syncing && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-            <div className="bg-gray-900 rounded-2xl p-12 max-w-md w-full text-center">
-              <div className="inline-block animate-spin rounded-full h-16 w-16 border-t-4 border-pink-600 mb-8"></div>
-              <h2 className="text-3xl font-bold text-white mb-4">
-                Synchronisation en cours...
-              </h2>
-              <p className="text-gray-300 text-lg mb-8">
-                Première connexion détectée.
-                <br />
-                Nous configurons votre accès à Autotask.
-              </p>
-              <div className="w-full bg-gray-800 rounded-full h-4">
-                <div
-                  className="bg-pink-600 h-4 rounded-full transition-all duration-1000"
-                  style={{ width: `${syncProgress}%` }}
-                />
-              </div>
-              <p className="text-sm text-gray-500 mt-4">
-                Cela prend généralement quelques secondes
-              </p>
-            </div>
+      {syncing && (
+  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="bg-gray-900 border border-white/10 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+      {/* Icône animée */}
+      <div className="flex justify-center mb-6">
+        <div className="relative">
+          <div className="w-16 h-16 rounded-full border-4 border-pink-600/20 border-t-pink-600 animate-spin"></div>
+          <div className="absolute inset-0 flex items-center justify-center text-pink-500 font-bold text-xs">
+            {Math.round(syncProgress)}%
           </div>
-        )}
+        </div>
+      </div>
+
+      <h2 className="text-2xl font-bold text-white text-center mb-2">
+        {syncProgress < 100 ? "Synchronisation..." : "C'est prêt !"}
+      </h2>
+      
+      <p className="text-gray-400 text-center text-sm mb-8">
+        {syncProgress < 100 
+          ? "Nous récupérons vos derniers tickets et messages depuis Autotask." 
+          : "Vos données sont à jour. Redirection en cours..."}
+      </p>
+
+      {/* Barre de progression style "Site" */}
+      <div className="w-full bg-white/5 rounded-full h-3 overflow-hidden border border-white/5">
+        <div
+          className="bg-gradient-to-r from-pink-600 to-pink-400 h-full transition-all duration-500 ease-out shadow-[0_0_15px_rgba(219,39,119,0.5)]"
+          style={{ width: `${syncProgress}%` }}
+        />
       </div>
     </div>
+  </div>
+)}
+    </div>
+  </div>
   );
 }

@@ -163,8 +163,6 @@ async createTicketForUser(contactId: number, companyId: number, title: string, d
   }
 }
 
-
-  // --- LOGIQUE DE SYNCHRO OPTIMISÉE (DELTA SYNC) ---
   // --- LOGIQUE DE SYNCHRO ULTRA-RAPIDE (BASÉE SUR LASTSYNC) ---
   async syncTicketsAndMessagesForUser(userId: number, contactId: number, companyId: number) {
     const user = await this.prisma.user.findUnique({
@@ -293,7 +291,9 @@ for (const note of notes) {
 
     await this.prisma.ticketMessage.upsert({
       where: { autotaskMessageId_sourceType: { autotaskMessageId: note.id, sourceType: 'note' } },
-      update: { syncedAt: new Date() },
+      update: { syncedAt: new Date(),
+        title: note.title || null,
+       },
       create: {
         ticketId: localTicket.id,
         autotaskTicketId: Number(ticket.id),
@@ -305,6 +305,7 @@ for (const note of notes) {
         authorAutotaskContactId: contactIdToStore, // Stocké seulement si c'est l'utilisateur
         localUserId: localUserIdToStore,           // Stocké seulement si c'est l'utilisateur
         content: note.description,
+        title: note.title || null,
         createdAt: note.createDateTime,
         syncedAt: new Date(),
       },

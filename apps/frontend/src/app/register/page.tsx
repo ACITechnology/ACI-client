@@ -19,9 +19,7 @@ export default function Register() {
   const [isSelectedFromList, setIsSelectedFromList] = useState(false);
 
   useEffect(() => {
-    const searchInput = document.getElementById(
-      "companySearch"
-    ) as HTMLInputElement;
+    const searchInput = document.getElementById("companySearch") as HTMLInputElement;
     const resultsDiv = document.getElementById("companyResults");
 
     if (!searchInput || !resultsDiv) return;
@@ -43,12 +41,12 @@ export default function Register() {
 
         if (companies.length === 0) {
           resultsDiv.innerHTML =
-            '<div class="p-3 text-gray-400 text-center">Aucune entreprise trouvée</div>';
+            '<div class="p-2.5 text-gray-400 text-center text-sm">Aucune entreprise trouvée</div>';
         } else {
           resultsDiv.innerHTML = companies
             .map(
               (company: { id: number; name: string }) =>
-                `<div class="p-3 hover:bg-gray-700/50 cursor-pointer border-b border-gray-700 last:border-0" data-company-id="${company.id}">
+                `<div class="p-2.5 hover:bg-gray-700/60 cursor-pointer border-b border-gray-700 last:border-0 text-sm" data-company-id="${company.id}">
                   ${company.name}
                 </div>`
             )
@@ -66,7 +64,7 @@ export default function Register() {
       searchCompanies(target.value.trim());
     };
 
-        const handleResultClick = (e: Event) => {
+    const handleResultClick = (e: Event) => {
       const target = e.target as HTMLElement;
       const companyDiv = target.closest("[data-company-id]");
       if (companyDiv) {
@@ -141,7 +139,7 @@ export default function Register() {
           password,
           firstName,
           lastName,
-          companyId: Number(companyId), // important : number, pas string
+          companyId: Number(companyId),
         }),
       });
 
@@ -171,18 +169,16 @@ export default function Register() {
   };
 
   return (
-    <div className="w-full max-w-md">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-bold text-white mb-4">
-            Inscription
-          </h1>
-          <p className="text-gray-400">
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 pb-24">
+      <div className="w-full max-w-sm "> {/* ← Décalage vers le bas + marge basse renforcée */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-white mb-3">Inscription</h1>
+          <p className="text-gray-400 text-sm">
             Inscrivez-vous pour accéder au portail client.
           </p>
         </div>
 
-        <form className="space-y-6 text-left" onSubmit={handleSubmit}>
+        <form className="space-y-5 text-left" onSubmit={handleSubmit}>
           <div>
             <label
               htmlFor="firstName"
@@ -196,7 +192,7 @@ export default function Register() {
               placeholder="Votre prénom"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 focus:border-transparent text-white placeholder-gray-500"
+              className="w-full px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 focus:border-transparent text-white placeholder-gray-500 text-sm"
               required
             />
           </div>
@@ -214,7 +210,7 @@ export default function Register() {
               placeholder="Votre nom"
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 focus:border-transparent text-white placeholder-gray-500"
+              className="w-full px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 focus:border-transparent text-white placeholder-gray-500 text-sm"
               required
             />
           </div>
@@ -232,7 +228,7 @@ export default function Register() {
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 focus:border-transparent text-white placeholder-gray-500"
+              className="w-full px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 focus:border-transparent text-white placeholder-gray-500 text-sm"
               required
             />
           </div>
@@ -250,7 +246,7 @@ export default function Register() {
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 focus:border-transparent text-white placeholder-gray-500"
+              className="w-full px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 focus:border-transparent text-white placeholder-gray-500 text-sm"
               required
             />
           </div>
@@ -268,7 +264,7 @@ export default function Register() {
               placeholder="••••••••"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 focus:border-transparent text-white placeholder-gray-500"
+              className="w-full px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 focus:border-transparent text-white placeholder-gray-500 text-sm"
               required
             />
           </div>
@@ -291,7 +287,7 @@ export default function Register() {
                   setCompanyId(null);
                   setIsSelectedFromList(false);
                 }}
-                className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 focus:border-transparent text-white placeholder-gray-500"
+                className="w-full px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 focus:border-transparent text-white placeholder-gray-500 text-sm"
                 autoComplete="off"
                 required
               />
@@ -304,28 +300,29 @@ export default function Register() {
               />
               <div
                 id="companyResults"
-                className="absolute z-20 mt-1 w-full max-h-60 overflow-y-auto bg-gray-800/90 border border-gray-700 rounded-lg hidden"
+                className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto bg-gray-800/90 border border-gray-700 rounded-lg hidden text-sm"
               >
                 {/* Résultats injectés par le useEffect */}
               </div>
             </div>
           </div>
+
           {error && (
-            <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-center">
+            <div className="p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-center text-sm">
               {error}
             </div>
           )}
 
           <button
             type="submit"
-            className="w-full py-3 px-4 bg-pink-600 hover:bg-pink-700 rounded-lg text-white font-medium transition shadow-md"
+            className="w-full py-2.5 px-4 bg-pink-600 hover:bg-pink-700 rounded-lg text-white font-medium transition shadow-md text-sm"
           >
             S'inscrire
           </button>
         </form>
 
-        <div className="text-center mt-6">
-          <p className="text-sm text-gray-400">
+        <div className="text-center mt-8 text-sm">
+          <p className="text-gray-400">
             Déjà un compte ?{" "}
             <Link href="/login" className="text-pink-600 hover:text-pink-500">
               Se connecter

@@ -3,6 +3,8 @@ import { Post, Body } from '@nestjs/common';
 import { TicketsService } from './tickets.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { Request } from 'express';
+import { Param, NotFoundException } from '@nestjs/common';
+import { BadRequestException, InternalServerErrorException } from '@nestjs/common';
 
 @Controller('tickets')
 export class TicketsController {
@@ -33,30 +35,49 @@ async getTickets(@Req() req: Request) {
   return { tickets };
 }
 
-  @Post()
-  @UseGuards(JwtAuthGuard)
-  async createTicket(@Body() createTicketDto: any, @Req() req: Request) {
-    const user = req.user as any;
+// apps/backend/src/tickets/tickets.controller.ts
 
-    if (!user?.autotaskContactId || !user?.autotaskCompanyId) {
-      throw new UnauthorizedException('Compte non synchronisé avec Autotask.');
-    }
+@Post()
+@UseGuards(JwtAuthGuard)
+async createTicket(@Body() createTicketDto: any, @Req() req: Request) {
+  const user = req.user as any;
+  const userId = user.userId || user.sub;
 
-    console.log('Nouvelle requête de création de ticket reçue :', createTicketDto);
+  // On ATTEND que le service ait fini (création Autotask + récupération numéro)
+  const finalTicket = await this.ticketsService.createTicketForUser(
+    user.autotaskContactId,
+    user.autotaskCompanyId,
+    createTicketDto.title,
+    createTicketDto.description,
+    userId
+  );
 
-        const ticket = await this.ticketsService.createTicketForUser(
-      user.autotaskContactId,
-      user.autotaskCompanyId,
-      createTicketDto.title,
-      createTicketDto.description,
-    );
+  return {
+    success: true,
+    data: finalTicket // On renvoie le vrai ticket complet
+  };
+}
 
-    return {
-      success: true,
-      message: 'Ticket créé avec succès dans Autotask !',
-      data: ticket,
-    };
+@Get(':id')
+@UseGuards(JwtAuthGuard)
+async getTicketById(@Param('id') id: string, @Req() req: Request) {
+  const user = req.user as any;
+
+  if (!user?.userId) {
+    throw new UnauthorizedException('Utilisateur non authentifié');
   }
+
+  const userId = Number(user.userId);
+  const autotaskTicketId = Number(id);  // ← l'ID dans l'URL est l'autotaskTicketId
+
+  const ticket = await this.ticketsService.getTicketByAutotaskId(autotaskTicketId, userId);
+
+  if (!ticket) {
+    throw new NotFoundException('Ticket non trouvé ou non autorisé');
+  }
+
+  return ticket;
+}
 
 
 @Post('db')
@@ -72,5 +93,48 @@ async getTicketsFromDb(@Req() req: Request, @Body() body: any) {
 
   const userId = user.userId; 
   return await this.ticketsService.getUserTicketsFromDb(userId);
+}
+
+@Get(':id/messages')
+@UseGuards(JwtAuthGuard)
+async getTicketMessages(@Param('id') id: string, @Req() req: Request) {
+  const user = req.user as any;
+  const autotaskTicketId = Number(id);
+
+  // Optionnel : on peut revérifier que le ticket appartient au user
+  // Mais pas obligatoire si on fait confiance à la sécurité côté frontend
+
+  const messages = await this.ticketsService.getTicketMessages(autotaskTicketId);
+
+  return messages;
+}
+
+@Post(':id/notes')
+@UseGuards(JwtAuthGuard)
+async createNote(
+  @Param('id') id: string,
+  @Body() body: { content: string },
+  @Req() req: Request,
+) {
+  const user = req.user as any;
+
+  if (!user?.userId || !user?.autotaskContactId) {
+    throw new UnauthorizedException('Utilisateur non authentifié ou non synchronisé');
+  }
+
+  const userId = Number(user.userId);
+  const autotaskTicketId = Number(id);
+  const content = body.content?.trim();
+
+  if (!content) {
+    throw new BadRequestException('Le contenu du message est requis');
+  }
+
+  return await this.ticketsService.createNoteForTicket(
+    autotaskTicketId,
+    user.autotaskContactId,
+    userId,
+    content
+  );
 }
 }

@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { User, ShieldCheck } from "lucide-react";
 
 export default function Profile() {
   const [user, setUser] = useState<any>(null);
@@ -30,7 +31,6 @@ export default function Profile() {
     setError("");
     setSuccess("");
 
-    // Validation mot de passe si rempli
     if (newPassword || confirmPassword || currentPassword) {
       if (!currentPassword) {
         setError("L'ancien mot de passe est obligatoire");
@@ -46,144 +46,155 @@ export default function Profile() {
       }
     }
 
-    // Envoi au backend (on le fera plus tard)
     try {
-      // À compléter : fetch POST /auth/update-profile
       setSuccess("Modifications enregistrées avec succès");
-      // Mise à jour localStorage
       const updatedUser = { ...user, phone };
       localStorage.setItem("user", JSON.stringify(updatedUser));
       setUser(updatedUser);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
     } catch (err) {
       setError("Erreur lors de la sauvegarde");
     }
   };
 
   if (loading) {
-    return <div className="text-center pt-16 text-gray-400">Chargement...</div>;
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <p className="text-gray-400 animate-pulse text-lg">Chargement...</p>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-5">
-        <div className="text-center mb-6">
-          <h1 className="text-3xl font-bold text-white mb-3">
-            Informations personnelles
-          </h1>
-        </div>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 md:py-12">
+      {/* Header */}
+      <div className="mb-8 text-center lg:text-left px-2">
+        <h1 className="text-2xl md:text-4xl font-bold text-white mb-2">Mon Profil</h1>
+        <p className="text-gray-400 text-xs md:text-base">Gérez vos informations et votre sécurité.</p>
+      </div>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1">
-              Prénom
-            </label>
-            <div className="px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg text-white text-sm">
-              {user.firstName}
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+          
+          {/* Section 1: Informations personnelles */}
+          <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-5 md:p-8 space-y-4">
+            <div className="flex items-center gap-3 mb-2">
+              <User className="w-5 h-5 text-pink-500 flex-shrink-0" />
+              <h2 className="text-lg md:text-xl font-semibold text-white">Informations</h2>
             </div>
-          </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1">
-              Nom
-            </label>
-            <div className="px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg text-white text-sm">
-              {user.lastName}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 ml-1">Prénom</label>
+                <div className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl text-gray-400 text-xs sm:text-sm truncate">
+                  {user.firstName}
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 ml-1">Nom</label>
+                <div className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl text-gray-400 text-xs sm:text-sm truncate">
+                  {user.lastName}
+                </div>
+              </div>
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1">
-              Email
-            </label>
-            <div className="px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg text-white text-sm">
-              {user.email}
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="phone" className="block text-xs font-medium text-gray-300 mb-1">
-              Téléphone
-            </label>
-            <input
-              type="tel"
-              id="phone"
-              placeholder="Votre téléphone"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="w-full px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 text-white placeholder-gray-400 text-sm"
-            />
-          </div>
-
-          <div className="pt-5 border-t border-gray-700">
-            <h2 className="text-lg font-semibold text-white mb-3">
-              Changer le mot de passe
-            </h2>
 
             <div>
-              <label htmlFor="currentPassword" className="block text-xs font-medium text-gray-300 mb-1">
+              <label className="block text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 ml-1">Email</label>
+              <div className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl text-gray-400 text-xs sm:text-sm truncate">
+                {user.email}
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="phone" className="block text-[10px] uppercase tracking-wider font-bold text-gray-400 mb-1 ml-1">
+                Téléphone
+              </label>
+              <input
+                type="tel"
+                id="phone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-pink-500 text-white text-xs sm:text-sm placeholder:text-gray-600 placeholder:text-[11px] sm:placeholder:text-sm transition"
+                placeholder="06 00 00 00 00"
+              />
+            </div>
+          </div>
+
+          {/* Section 2: Sécurité */}
+          <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-5 md:p-8 space-y-4">
+            <div className="flex items-center gap-3 mb-2">
+              <ShieldCheck className="w-5 h-5 text-pink-500 flex-shrink-0" />
+              <h2 className="text-lg md:text-xl font-semibold text-white">Sécurité</h2>
+            </div>
+
+            <div>
+              <label htmlFor="currentPassword" className="block text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 ml-1">
                 Mot de passe actuel
               </label>
               <input
                 type="password"
                 id="currentPassword"
-                placeholder="••••••••"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
-                className="w-full px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 text-white placeholder-gray-400 text-sm"
+                className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-pink-500 text-white text-xs sm:text-sm placeholder:text-gray-600 placeholder:text-[11px] sm:placeholder:text-sm transition"
+                placeholder="Mot de passe actuel"
               />
             </div>
 
-            <div className="mt-3">
-              <label htmlFor="newPassword" className="block text-xs font-medium text-gray-300 mb-1">
-                Nouveau mot de passe
-              </label>
-              <input
-                type="password"
-                id="newPassword"
-                placeholder="••••••••"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 text-white placeholder-gray-400 text-sm"
-              />
-            </div>
-
-            <div className="mt-3">
-              <label htmlFor="confirmPassword" className="block text-xs font-medium text-gray-300 mb-1">
-                Confirmer le nouveau mot de passe
-              </label>
-              <input
-                type="password"
-                id="confirmPassword"
-                placeholder="••••••••"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-3 py-2.5 bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-600 text-white placeholder-gray-400 text-sm"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="newPassword" className="block text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 ml-1">
+                  Nouveau
+                </label>
+                <input
+                  type="password"
+                  id="newPassword"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-pink-500 text-white text-xs sm:text-sm placeholder:text-gray-600 placeholder:text-[11px] sm:placeholder:text-sm transition"
+                  placeholder="8+ car."
+                />
+              </div>
+              <div>
+                <label htmlFor="confirmPassword" className="block text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 ml-1">
+                  Confirmation
+                </label>
+                <input
+                  type="password"
+                  id="confirmPassword"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-pink-500 text-white text-xs sm:text-sm placeholder:text-gray-600 placeholder:text-[11px] sm:placeholder:text-sm transition"
+                  placeholder="Confirmer"
+                />
+              </div>
             </div>
           </div>
+        </div>
 
+        {/* Action */}
+        <div className="max-w-2xl mx-auto space-y-4 pt-4 px-2">
           {error && (
-            <div className="p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-center text-sm">
+            <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-xl text-red-400 text-center text-xs">
               {error}
             </div>
           )}
-
           {success && (
-            <div className="p-3 bg-green-900/50 border border-green-700 rounded-lg text-green-300 text-center text-sm">
+            <div className="p-3 bg-green-500/10 border border-green-500/50 rounded-xl text-green-400 text-center text-xs">
               {success}
             </div>
           )}
 
           <button
-            type="button"
-            onClick={handleSubmit}
-            className="w-full py-2.5 px-4 bg-pink-600 hover:bg-pink-700 rounded-lg text-white font-medium transition shadow-md text-sm"
+            type="submit"
+            className="w-full sm:w-max sm:mx-auto block px-14 py-3 bg-pink-600 hover:bg-pink-700 rounded-full text-white font-bold transition shadow-lg shadow-pink-600/20 active:scale-95 text-sm"
           >
-            Enregistrer les modifications
+            Enregistrer
           </button>
-          <div className="h-16"></div>
         </div>
-      </div>
+      </form>
     </div>
   );
 }

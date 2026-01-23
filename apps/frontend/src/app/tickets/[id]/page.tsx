@@ -112,8 +112,8 @@ export default function TicketDetailPage() {
             <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-6 shadow-xl flex-shrink-0">
               <h2 className="text-sm font-bold mb-4 text-gray-300">Ticket #{ticket.ticketNumber}</h2>
               <div className="space-y-1.5 text-xs text-gray-400">
-                <div className="flex justify-between"><span>Créé le</span><span className="text-white">{new Date(ticket.createDate).toLocaleDateString()}</span></div>
-                <div className="flex justify-between"><span>Modifié le</span><span className="text-white">{ticket.lastActivityDate ? new Date(ticket.lastActivityDate).toLocaleDateString() : "-"}</span></div>
+                <div className="flex justify-between"><span>Créé le</span><span className="text-white">{new Date(ticket.createDate).toLocaleString('fr-FR', { hour12: false })}</span></div>
+                <div className="flex justify-between"><span>Modifié le</span><span className="text-white">{ticket.lastActivityDate ? new Date(ticket.lastActivityDate).toLocaleString('fr-FR', { hour12: false }) : "-"}</span></div>
                 <div className="flex justify-between"><span>Statut</span><span className="text-green-400 font-medium">{ticket.status === 5 ? "Résolu" : "En cours"}</span></div>
               </div>
               <div className="h-[1px] bg-white/10 my-4" />
@@ -172,7 +172,7 @@ export default function TicketDetailPage() {
                       )}
                       <div className="flex items-center gap-4 mb-4">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${msg.userType === "user" ? "bg-pink-600" : "bg-cyan-600"}`}>{msg.authorName?.charAt(0)}</div>
-                        <div className="flex flex-col text-xs text-gray-400"><span className="font-bold text-white">{msg.authorName}</span><span>{new Date(msg.createdAt).toLocaleString()}</span></div>
+                        <div className="flex flex-col text-xs text-gray-400"><span className="font-bold text-white">{msg.authorName}</span><span>{new Date(msg.createdAt).toLocaleString('fr-FR', { hour12: false })}</span></div>
                       </div>
                       <div className="text-gray-300 text-sm whitespace-pre-wrap break-words leading-relaxed">{msg.content}</div>
                     </div>

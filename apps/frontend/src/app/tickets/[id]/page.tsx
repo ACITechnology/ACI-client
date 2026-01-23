@@ -93,7 +93,7 @@ export default function TicketDetailPage() {
   if (loading) return <div className="min-h-screen flex items-center justify-center text-gray-400 animate-pulse">Chargement...</div>;
 
   return (
-    <div className="w-full px-4 lg:px-6 pt-0 pb-10 flex flex-col min-h-screen -mt-[2vh] lg:-mt-[5vh]">
+    <div className="w-full px-4 lg:px-6 pt-0 pb-10 flex flex-col min-h-screen -mt-[2vh] md:-mt-[5vh]">
       <nav className="flex items-center gap-2 mb-4 group flex-shrink-0">
         <button onClick={() => router.push("/tickets")} className="flex items-center gap-2 text-gray-500 hover:text-pink-500 transition-colors text-sm font-medium">
           <svg className="w-4 h-4 transition-transform group-hover:-translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
@@ -102,13 +102,13 @@ export default function TicketDetailPage() {
       </nav>
 
       {ticket ? (
-        /* LE RECTANGLE DE TAILLE FIXE CONTENEUR */
-        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 text-white h-[820px]">
+        /* CONTENEUR PRINCIPAL : Grille 2 colonnes sur tablette (md) et plus, 1 colonne sur mobile */
+        <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-6 text-white md:h-[820px] h-auto">
           
-          {/* COLONNE GAUCHE (S'étire sur toute la hauteur du parent) */}
-          <div className="flex flex-col gap-3 h-full overflow-hidden"> 
+          {/* COLONNE GAUCHE (Sidebar) */}
+          <div className="flex flex-col gap-3 md:h-full h-auto overflow-hidden"> 
             
-            {/* 1 : INFOS (Fixe) */}
+            {/* 1 : INFOS */}
             <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-6 shadow-xl flex-shrink-0">
               <h2 className="text-sm font-bold mb-4 text-gray-300">Ticket #{ticket.ticketNumber}</h2>
               <div className="space-y-1.5 text-xs text-gray-400">
@@ -128,7 +128,7 @@ export default function TicketDetailPage() {
               </div>
             </div>
 
-            {/* 2 : PROGRESSION (Fixe) */}
+            {/* 2 : PROGRESSION */}
             <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-6 shadow-xl flex-shrink-0 h-[100px]">
               <div className="flex justify-between items-end mb-4">
                 <h2 className="text-gray-300 text-xs font-medium tracking-tighter">Progression</h2>
@@ -139,8 +139,8 @@ export default function TicketDetailPage() {
               </div>
             </div>
 
-            {/* 3 : DESCRIPTION (FLEX-GROW : Se remplit jusqu'au bas du conteneur de 820px) */}
-            <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-6 shadow-xl flex flex-col flex-grow min-h-0">
+            {/* 3 : DESCRIPTION (Flex-grow sur Desktop/Tablette) */}
+            <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-6 shadow-xl flex flex-col md:flex-grow min-h-[200px] md:min-h-0">
               <h4 className="text-white font-medium mb-3 text-sm leading-tight flex-shrink-0">{ticket.title}</h4>
               <div className="overflow-y-auto pr-2 custom-scrollbar flex-grow">
                 <p className="text-gray-400 text-xs leading-relaxed whitespace-pre-wrap break-words">
@@ -150,11 +150,11 @@ export default function TicketDetailPage() {
             </div>
           </div>
 
-          {/* COLONNE DROITE (Fixée par le parent à 820px) */}
-          <div className="flex flex-col h-full overflow-hidden">
+          {/* COLONNE DROITE (Messagerie) */}
+          <div className="flex flex-col md:h-full h-[600px] md:h-full overflow-hidden">
             <h3 className="text-xl font-bold mb-6 px-2 flex-shrink-0">Notes et réponses</h3>
 
-            {/* ZONE MESSAGES (Prend l'espace restant au dessus du textarea) */}
+            {/* ZONE MESSAGES */}
             <div className="relative flex-grow min-h-0 overflow-hidden">
               <div
                 ref={scrollRef}
@@ -181,7 +181,7 @@ export default function TicketDetailPage() {
               </div>
             </div>
 
-            {/* ZONE DE SAISIE (Fixe en bas) */}
+            {/* ZONE DE SAISIE */}
             <div className="mt-4 flex-shrink-0 pb-2">
               <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden focus-within:border-pink-500/50 transition-all shadow-2xl backdrop-blur-md">
                 <textarea
@@ -189,7 +189,7 @@ export default function TicketDetailPage() {
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                   placeholder="Décrivez votre problème ou répondez ici..."
-                  className="w-full bg-black/20 text-gray-300 text-sm p-5 h-[160px] focus:outline-none resize-none placeholder:text-gray-600 custom-textarea"
+                  className="w-full bg-black/20 text-gray-300 text-sm p-5 h-[120px] md:h-[160px] focus:outline-none resize-none placeholder:text-gray-600 custom-textarea"
                 />
                 <div className="px-4 py-3 flex justify-end items-center gap-3 bg-white/[0.02]">
                   <input type="file" ref={fileInputRef} className="hidden" />

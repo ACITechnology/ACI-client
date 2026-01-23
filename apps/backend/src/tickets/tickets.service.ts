@@ -464,6 +464,11 @@ async createNoteForTicket(
       ? `[user]: ${user.firstName} ${user.lastName}` 
       : `[user]: Client Portail`;
 
+    // TITRE POUR AUTOTASK : "Note par Prénom Nom"
+    const autotaskNoteTitle = user 
+      ? `Note par ${user.firstName} ${user.lastName}` 
+      : "Note client via portail";
+
     const headers = {
       'ApiIntegrationCode': this.configService.get('AUTOTASK_API_INTEGRATION_CODE'),
       'UserName': this.configService.get('AUTOTASK_USERNAME'),
@@ -473,7 +478,7 @@ async createNoteForTicket(
 
     const payload = {
       createdByContactID: Number(createdByContactID),
-      title: "Note client via portail",
+      title: autotaskNoteTitle,
       description: content,
       noteType: 1,
       publish: 1,
@@ -510,6 +515,7 @@ async createNoteForTicket(
         authorName: authorFullName, 
         authorAutotaskContactId: Number(createdByContactID), 
         localUserId: userId,
+        apiResourceId: 29682975,
         content: content,
         createdAt: new Date(),
         syncedAt: new Date(),

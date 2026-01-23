@@ -73,39 +73,92 @@ export class TicketsService {
   // apps/backend/src/tickets/tickets.service.ts
 
 async createTicketForUser(contactId: number, companyId: number, title: string, description: string, userId: number) {
-  // 1. On crée d'abord une entrée "fantôme" ou locale dans notre DB
-  // Cela permet d'avoir un ID local tout de suite.
-  const temporaryTicket = await this.prisma.ticket.create({
+  // 1. Récupérer les infos de l'utilisateur pour le authorName
+  const user = await this.prisma.user.findUnique({
+    where: { id: userId },
+    select: { firstName: true, lastName: true }
+  });
+  const authorFullName = user ? `${user.firstName} ${user.lastName}` : 'Utilisateur Portail';
+
+  const tempUniqueId = BigInt(-Date.now());
+
+  // 2. Création initiale avec les infos que l'on possède déjà
+  const localTicket = await this.prisma.ticket.create({
     data: {
-      title,
-      description, // assure-toi d'avoir ce champ dans ton schéma
-      status: 1, // "Nouveau"
-      createDate: new Date(),
       userId: userId,
-      ticketNumber: '...', // Temporaire
-    }
+      title: title,
+      description: description,
+      status: 1,
+      priority: 3, // Priorité par défaut
+      createDate: new Date(),
+      lastSync: new Date(),
+      autotaskTicketId: tempUniqueId,
+      ticketNumber: `TEMP-${Date.now()}`,
+      authorName: authorFullName,
+      companyAutotaskId: BigInt(companyId),
+      contactAutotaskId: BigInt(contactId),
+    },
   });
 
   try {
-    // 2. Appel à l'API Autotask (la partie lente)
-    const autotaskTicket = await this.createInAutotask(contactId, companyId, title, description);
+    const headers = {
+      'ApiIntegrationCode': this.configService.get('AUTOTASK_API_INTEGRATION_CODE'),
+      'UserName': this.configService.get('AUTOTASK_USERNAME'),
+      'Secret': this.configService.get('AUTOTASK_SECRET'),
+      'Content-Type': 'application/json',
+    };
 
-    // 3. On met à jour notre ticket local avec les vraies infos d'Autotask
-    const updatedTicket = await this.prisma.ticket.update({
-      where: { id: temporaryTicket.id },
+    const payload = {
+      companyID: Number(companyId),
+      contactID: Number(contactId),
+      title: title,
+      description: description,
+      queueID: 29682833,
+      status: 1,
+      priority: 3,
+      source: -1,
+      ticketType: 1,
+      billingCodeID: 29682801
+    };
+
+    // Création dans Autotask
+    const response = await firstValueFrom(
+      this.httpService.post(
+        'https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets',
+        payload,
+        { headers }
+      )
+    );
+
+    const autotaskId = response.data.itemId;
+
+    // 3. RÉCUPÉRATION DU TICKET COMPLET (pour avoir le vrai ticketNumber)
+    // L'API POST ne renvoie que l'ID, on fait un GET pour avoir le reste (T2026...)
+    const getTicketUrl = `https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/${autotaskId}`;
+    const fullTicketResp = await firstValueFrom(
+      this.httpService.get(getTicketUrl, { headers })
+    );
+    const fullTicket = fullTicketResp.data.item;
+
+    // 4. Mise à jour finale de la DB locale avec toutes les infos
+    return await this.prisma.ticket.update({
+      where: { id: localTicket.id },
       data: {
-        autotaskId: Number(autotaskTicket.id),
-        ticketNumber: autotaskTicket.ticketNumber,
-      }
+        autotaskTicketId: BigInt(autotaskId),
+        ticketNumber: fullTicket.ticketNumber, // Exemple: T20260121.0024
+        priority: fullTicket.priority,
+        lastActivityDate: fullTicket.lastActivityDate,
+        lastSync: new Date(),
+      },
     });
 
-    return updatedTicket;
   } catch (error) {
-    // Optionnel : supprimer ou marquer le ticket en "Erreur" si Autotask échoue
-    await this.prisma.ticket.update({
-      where: { id: temporaryTicket.id },
-      data: { title: `[ÉCHEC SYNC] ${title}` }
+    console.error("ERREUR AUTOTASK API:", error.response?.data?.errors || error.message);
+    
+    await this.prisma.ticket.delete({
+      where: { id: localTicket.id }
     });
+    
     throw error;
   }
 }
@@ -212,34 +265,52 @@ async createTicketForUser(contactId: number, companyId: number, title: string, d
 
         // 2. [MODIF] FILTRE DES NOTES PAR DATE DE CRÉATION
         // On ne traite que les notes créées APRÈS notre dernière date de synchro (lastSyncDate)
-        for (const note of notes) {
-          const noteDate = new Date(note.createDateTime);
-          if (note.publish === 1 && note.noteType !== 13 && noteDate > lastSyncDate) {
-            
-            console.log(`[SYNC] Nouveau message détecté (Note ID: ${note.id})`);
+        // --- Dans syncTicketsAndMessagesForUser, section NOTES ---
+for (const note of notes) {
+  const noteDate = new Date(note.createDateTime);
+  if (note.publish === 1 && note.noteType !== 13 && noteDate > lastSyncDate) {
+    
+    const resId = note.creatorResourceID ? Number(note.creatorResourceID) : null;
+    
+    // Cas 1 : Message de l'utilisateur via l'app (ID fixe 29682975)
+    const isAppUser = (resId === 29682975);
+    // Cas 2 : Message du contact direct (via email/portail Autotask)
+    const isDirectContact = (resId === Number(user.autotaskContactId));
 
-            const resId = note.creatorResourceID;
-            const isUser = (Number(resId) === 29682975 || Number(resId) === Number(user.autotaskContactId));
-            let finalAuthorName = isUser ? userDisplayLabel : await this.getAuthorName(resId);
+    let finalAuthorName: string;
+    let localUserIdToStore: number | null = null;
+    let contactIdToStore: number | null = null;
 
-            await this.prisma.ticketMessage.upsert({
-              where: { autotaskMessageId_sourceType: { autotaskMessageId: note.id, sourceType: 'note' } },
-              update: { syncedAt: new Date() }, // Si elle existe déjà, on met juste à jour la date de synchro
-              create: {
-                ticketId: localTicket.id,
-                autotaskTicketId: Number(ticket.id),
-                autotaskMessageId: note.id,
-                sourceType: 'note',
-                userType: isUser ? 'user' : 'technician',
-                authorName: finalAuthorName,
-                apiResourceId: resId || null,
-                content: note.description,
-                createdAt: note.createDateTime,
-                syncedAt: new Date(),
-              },
-            });
-          }
-        }
+    if (isAppUser || isDirectContact) {
+      // C'est l'utilisateur
+      finalAuthorName = `[user]: ${user.firstName} ${user.lastName}`;
+      localUserIdToStore = userId; // ID local de l'user connecté
+      contactIdToStore = Number(user.autotaskContactId); // ID Autotask du contact
+    } else {
+      // C'est un technicien ou autre
+      finalAuthorName = await this.getAuthorName(resId);
+    }
+
+    await this.prisma.ticketMessage.upsert({
+      where: { autotaskMessageId_sourceType: { autotaskMessageId: note.id, sourceType: 'note' } },
+      update: { syncedAt: new Date() },
+      create: {
+        ticketId: localTicket.id,
+        autotaskTicketId: Number(ticket.id),
+        autotaskMessageId: note.id,
+        sourceType: 'note',
+        userType: (isAppUser || isDirectContact) ? 'user' : 'technician',
+        authorName: finalAuthorName,
+        apiResourceId: resId, // On stocke le resourceId original
+        authorAutotaskContactId: contactIdToStore, // Stocké seulement si c'est l'utilisateur
+        localUserId: localUserIdToStore,           // Stocké seulement si c'est l'utilisateur
+        content: note.description,
+        createdAt: note.createDateTime,
+        syncedAt: new Date(),
+      },
+    });
+  }
+}
 
         // 3. [MODIF] FILTRE DES TEMPS PASSÉS
         for (const entry of timeEntries) {
@@ -279,20 +350,176 @@ async createTicketForUser(contactId: number, companyId: number, title: string, d
  // ... (méthodes existantes)
 
   async getUserTicketsFromDb(userId: number) {
-    //console.log("[SERVICE] Exécution de la requête Prisma pour userId :", userId);
-    try {
-      const tickets = await this.prisma.ticket.findMany({
-        where: { userId: Number(userId) }, // Force conversion en nombre au cas où
-        orderBy: { createDate: 'desc' },
-      });
-      
-      //console.log(`[SERVICE] Prisma a retourné ${tickets.length} tickets`);
-      return tickets;
-    } catch (error) {
-      //console.error("[SERVICE] Erreur Prisma lors de la lecture des tickets :", error);
-      throw error;
-    }
+  try {
+    const tickets = await this.prisma.ticket.findMany({
+      where: { userId: Number(userId) },
+      orderBy: { createDate: 'desc' },
+    });
+    
+    // MODIF ICI : Convertir les BigInt pour éviter l'erreur de sérialisation JSON
+    return tickets.map(ticket => ({
+      ...ticket,
+      autotaskTicketId: ticket.autotaskTicketId.toString(),
+      companyAutotaskId: ticket.companyAutotaskId?.toString(),
+      contactAutotaskId: ticket.contactAutotaskId?.toString(),
+    }));
+  } catch (error) {
+    throw error;
   }
+}
 
+// À ajouter à la fin de la classe TicketsService
+private async getAuthorName(resourceId: number | null): Promise<string> {
+  // Si l'id est null, on retourne "Inconnu" comme demandé
+  if (!resourceId) return 'Inconnu';
+
+  try {
+    const tech = await this.prisma.technician.findUnique({
+      where: { id: Number(resourceId) },
+      select: { fullName: true }
+    });
+
+    // Si on trouve le tech dans la DB, on rend son nom, sinon "Inconnu"
+    return tech ? tech.fullName : 'Inconnu';
+  } catch (error) {
+    return 'Inconnu';
+  }
+}
+private async createInAutotask(contactId: number, companyId: number, title: string, description: string) {
+  const headers = { 
+    'ApiIntegrationCode': this.configService.get('AUTOTASK_API_INTEGRATION_CODE'), 
+    'UserName': this.configService.get('AUTOTASK_USERNAME'), 
+    'Secret': this.configService.get('AUTOTASK_SECRET'),
+    'Content-Type': 'application/json'
+  };
+  const url = 'https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets';
+  const body = {
+    title,
+    description,
+    companyID: companyId,
+    contactID: contactId,
+    status: 1, // Nouveau
+    priority: 1, // Normale
+  };
+  
+  const response = await firstValueFrom(this.httpService.post(url, body, { headers }));
+  return response.data; // Contient l'ID et le ticketNumber
+}
+
+
+async getTicketByAutotaskId(autotaskTicketId: number, userId: number) {
+  return this.prisma.ticket.findFirst({
+    where: {
+      autotaskTicketId,
+      userId,  // ← sécurité : on vérifie que c'est bien le ticket de cet utilisateur
+    },
+    select: {
+      id: true,
+      autotaskTicketId: true,
+      ticketNumber: true,
+      title: true,
+      description: true,
+      createDate: true,
+      lastActivityDate: true,
+      status: true,
+      priority: true,
+      assignedResourceName: true,
+      assignedResourceId: true,
+    },
+  });
+}
+
+async getTicketMessages(autotaskTicketId: number) {
+  return this.prisma.ticketMessage.findMany({
+    where: { autotaskTicketId },
+    orderBy: { createdAt: 'asc' }, // Chronologique
+    select: {
+      id: true,
+      userType: true,
+      authorName: true,
+      content: true,
+      createdAt: true,
+      sourceType: true, // 'note' ou 'time_entry'
+      apiResourceId: true,
+      localUserId: true,
+    },
+  });
+}
+
+async createNoteForTicket(
+  autotaskTicketId: number,
+  createdByContactID: number, // autotaskContactId (Int dans votre schéma User)
+  userId: number,             // id local de l'utilisateur (Int)
+  content: string,
+) {
+  try {
+    // 1. Récupérer les infos de l'utilisateur pour le nom complet
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true }
+    });
+
+    // Formatage du nom de l'auteur tel que demandé
+    const authorFullName = user 
+      ? `[user]: ${user.firstName} ${user.lastName}` 
+      : `[user]: Client Portail`;
+
+    const headers = {
+      'ApiIntegrationCode': this.configService.get('AUTOTASK_API_INTEGRATION_CODE'),
+      'UserName': this.configService.get('AUTOTASK_USERNAME'),
+      'Secret': this.configService.get('AUTOTASK_SECRET'),
+      'Content-Type': 'application/json',
+    };
+
+    const payload = {
+      createdByContactID: Number(createdByContactID),
+      title: "Note client via portail",
+      description: content,
+      noteType: 1,
+      publish: 1,
+    };
+
+    // 2. Création dans Autotask
+    const response = await firstValueFrom(
+      this.httpService.post(
+        `https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/${autotaskTicketId}/Notes`,
+        payload,
+        { headers }
+      )
+    );
+
+    // L'ID de la note renvoyé par Autotask
+    const autotaskNoteId = response.data.itemId;
+
+    // 3. Récupère le ticket local (Ici on utilise BigInt car votre schéma Ticket le demande)
+    const localTicket = await this.prisma.ticket.findFirst({
+      where: { autotaskTicketId: BigInt(autotaskTicketId) },
+      select: { id: true },
+    });
+
+    if (!localTicket) throw new Error('Ticket local non trouvé');
+
+    // 4. Création dans ticket_messages
+    // ATTENTION : On convertit tout en Number() pour correspondre à votre schema.prisma actuel
+    return await this.prisma.ticketMessage.create({
+      data: {
+        autotaskMessageId: Number(autotaskNoteId), 
+        ticketId: localTicket.id,
+        autotaskTicketId: Number(autotaskTicketId), 
+        userType: 'user',
+        authorName: authorFullName, 
+        authorAutotaskContactId: Number(createdByContactID), 
+        localUserId: userId,
+        content: content,
+        createdAt: new Date(),
+        syncedAt: new Date(),
+        sourceType: 'note',
+      },
+    });
+  } catch (error) {
+    console.error('[CREATE NOTE] Erreur :', error.response?.data || error.message);
+    throw error;
+  }
+}
 
 }

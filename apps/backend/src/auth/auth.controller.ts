@@ -35,20 +35,27 @@ async syncStatus(@Req() req: any) {
   const user = req.user;
   
   // 1. On attend la fin de la synchro réelle
-  await this.ticketsService.syncTicketsAndMessagesForUser(
+  // await this.ticketsService.syncTicketsAndMessagesForUser(
+  //   user.userId, 
+  //   user.autotaskContactId, 
+  //   user.autotaskCompanyId
+  // );
+  await this.ticketsService.queueSyncUser(
     user.userId, 
     user.autotaskContactId, 
     user.autotaskCompanyId
   );
 
+
   // 2. IMPORTANT : On récupère l'utilisateur à jour en base
   // On utilise directement le service de tickets ou prisma pour récupérer l'user
   // car req.user contient les vieilles infos du Token JWT
-  const updatedUser = await this.authService.getFreshUser(user.userId);
+  
+  //const updatedUser = await this.authService.getFreshUser(user.userId);
 
   return { 
     success: true, 
-    user: updatedUser // <--- C'est ça qui va mettre à jour ton Frontend !
+    message: 'Synchronisation en arrière-plan lancée'
   };
 }
 }

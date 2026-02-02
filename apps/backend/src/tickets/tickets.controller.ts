@@ -114,27 +114,22 @@ async getTicketMessages(@Param('id') id: string, @Req() req: Request) {
 async createNote(
   @Param('id') id: string,
   @Body() body: { content: string },
-  @Req() req: Request,
+  @Req() req: any,
 ) {
-  const user = req.user as any;
-
-  if (!user?.userId || !user?.autotaskContactId) {
-    throw new UnauthorizedException('Utilisateur non authentifié ou non synchronisé');
-  }
-
-  const userId = Number(user.userId);
+  const user = req.user;
   const autotaskTicketId = Number(id);
   const content = body.content?.trim();
 
-  if (!content) {
-    throw new BadRequestException('Le contenu du message est requis');
-  }
+  if (!content) throw new BadRequestException('Le contenu est requis');
 
-  return await this.ticketsService.createNoteForTicket(
+  // APPEL À LA QUEUE (Réponse instantanée pour le client)
+  await this.ticketsService.queueCreateNote(
     autotaskTicketId,
     user.autotaskContactId,
-    userId,
+    user.userId,
     content
   );
+
+  return { success: true, message: "Message en cours d'envoi" };
 }
 }

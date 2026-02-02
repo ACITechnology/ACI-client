@@ -125,10 +125,10 @@ model Ticket {
 // Table unique pour la messagerie
 model TicketMessage {
   id                Int      @id @default(autoincrement())
-  autotaskMessageId Int      
+  autotaskMessageId BigInt      
   ticketId          Int      
   ticket            Ticket   @relation(fields: [ticketId], references: [id])
-  autotaskTicketId  Int      
+  autotaskTicketId  BigInt      
   
   // Cette colonne devient la Clé Étrangère vers Technician
   apiResourceId     Int?     

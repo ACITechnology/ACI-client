@@ -1,5 +1,6 @@
 // src/app.module.ts
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma.module';
@@ -14,6 +15,12 @@ import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
+    BullModule.forRoot({
+      connection: {
+        host: 'localhost',
+        port: 6379, // Le port par défaut de Redis que tu as lancé sur WSL
+      },
+    }),
     ScheduleModule.forRoot(),
     PrismaModule,
     UsersModule, 

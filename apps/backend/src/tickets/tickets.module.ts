@@ -1,16 +1,24 @@
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq'; // Garde-le une seule fois ici
 import { TicketsController } from './tickets.controller';
 import { TicketsService } from './tickets.service';
-import { HttpModule } from '@nestjs/axios'; // ← AJOUT
-import { ConfigModule } from '@nestjs/config'; // ← AJOUT
+import { HttpModule } from '@nestjs/axios';
+import { ConfigModule } from '@nestjs/config';
+import { TicketsWorker } from './workers/tickets.worker';
 
 @Module({
-    imports: [
-    HttpModule,         // ← AJOUT
-    ConfigModule,       // ← AJOUT
+  imports: [
+    HttpModule,
+    ConfigModule,
+    BullModule.registerQueue({
+      name: 'autotask-queue',
+    }),
   ],
   controllers: [TicketsController],
-  providers: [TicketsService],
-  exports: [TicketsService], // ← important si tu veux l'utiliser ailleurs plus tard
+  providers: [
+    TicketsService,
+    TicketsWorker
+  ],
+  exports: [TicketsService],
 })
 export class TicketsModule {}

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { io } from "socket.io-client";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -43,18 +44,38 @@ export default function Login() {
       setSyncing(true);
       setSyncProgress(5);
 
-      // 2. LANCER LA BARRE DE PROGRESSION (Fake)
+      // 2. LANCER LA BARRE DE PROGRESSION (Fake jusqu'à 95%)
+      const visualStartTime = Date.now(); // Début du ressenti visuel
+      console.log(
+        `[PERF] ⏱️ Lancement de la barre de progression à : ${new Date().toLocaleTimeString()}`,
+      );
+
       const fakeProgress = setInterval(() => {
         setSyncProgress((prev) => {
-          if (prev >= 99) return prev;
-          const step = prev < 70 ? 3 : prev < 90 ? 1.5 : 0.5;
-          return Math.min(prev + step, 99);
+          if (prev >= 95) return prev;
+          return prev + 2;
         });
-      }, 300);
+      }, 200);
 
-      // 3. APPEL SYNC (BullMQ)
+      // 3. SE CONNECTER AU SOCKET POUR ÉCOUTER LA FIN
+      const socket = io("http://localhost:3001");
+      const syncChannel = `sync_finished_${data.user.id}`;
+
+      const syncPromise = new Promise((resolve) => {
+        socket.on(syncChannel, (payload) => {
+          const wsReceivedTime = Date.now();
+          console.log(`[PERF] 📥 SIGNAL WS REÇU !`);
+          console.log(
+            `[PERF] ⚙️ Temps d'exécution Backend (via Autotask) : ${payload.duration}s`,
+          );
+          resolve(wsReceivedTime);
+        });
+      });
+
+      // 4. APPEL SYNC (BullMQ)
       try {
-        const syncResp = await fetch("http://localhost:3001/auth/sync-status", {
+        const apiCallTime = Date.now();
+        await fetch("http://localhost:3001/auth/sync-status", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${data.access_token}`,
@@ -62,17 +83,33 @@ export default function Login() {
           },
         });
 
-        // Même si le backend répond "OK" tout de suite, on attend 3 secondes
-        // pour laisser le Worker BullMQ travailler avant de rediriger
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        // ATTENTE DU SIGNAL
+        const wsFinishedAt = await syncPromise;
+
+        // CALCULS FINAUX
+        const totalVisualDuration = (
+          (Date.now() - visualStartTime) /
+          1000
+        ).toFixed(2);
+        const networkLatency = ((wsFinishedAt - apiCallTime) / 1000).toFixed(2);
+
+        console.log("-----------------------------------------");
+        console.log(`[PERF-FINAL] 📊 RÉSUMÉ DE LA SYNCHRO :`);
+        console.log(
+          `[PERF-FINAL] 🕒 Durée totale de la barre : ${totalVisualDuration}s`,
+        );
+        console.log(
+          `[PERF-FINAL] 🌐 Latence (Appel API -> Retour WS) : ${networkLatency}s`,
+        );
+        console.log("-----------------------------------------");
 
         clearInterval(fakeProgress);
         setSyncProgress(100);
+        socket.disconnect();
 
         setTimeout(() => {
           window.location.href = "/";
         }, 500);
-
       } catch (err) {
         clearInterval(fakeProgress);
         setError("La synchronisation a échoué, mais vous pouvez continuer.");

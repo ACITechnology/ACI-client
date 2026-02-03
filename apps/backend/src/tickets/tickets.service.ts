@@ -234,138 +234,147 @@ export class TicketsService {
       const techs = await this.prisma.technician.findMany();
       const techMap = new Map(techs.map((t) => [t.id, t.fullName]));
 
-      // On garde referenceDate uniquement pour filtrer les TICKETS (performance)
+      // 1. Déterminer la date de dernière synchronisation réussie
       const lastGlobalSync = await this.prisma.ticket.findFirst({
         where: { userId: userId },
         orderBy: { lastSync: 'desc' },
         select: { lastSync: true },
       });
-      const referenceDate = lastGlobalSync?.lastSync
-        ? lastGlobalSync.lastSync.toISOString()
-        : '2000-01-01T00:00:00Z';
+      
+      // Si aucune sync, on prend l'an 2000 pour tout récupérer
+      const referenceDate = lastGlobalSync?.lastSync 
+        ? lastGlobalSync.lastSync 
+        : new Date('2000-01-01T00:00:00Z');
 
       const headers = {
-        ApiIntegrationCode: this.configService.get(
-          'AUTOTASK_API_INTEGRATION_CODE',
-        ),
+        ApiIntegrationCode: this.configService.get('AUTOTASK_API_INTEGRATION_CODE'),
         UserName: this.configService.get('AUTOTASK_USERNAME'),
         Secret: this.configService.get('AUTOTASK_SECRET'),
         'Content-Type': 'application/json',
       };
 
-      // 1. Récupération des tickets modifiés
-      const ticketsResp = await firstValueFrom(
+      // 2. RÉCUPÉRATION DE TOUS LES TICKETS DU CONTACT (Sans filtre de date initial)
+      // On récupère la liste complète pour voir si un vieux ticket a été modifié
+      const allTicketsResp = await firstValueFrom(
         this.httpService.post(
           'https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/query',
           {
             filter: [
               { op: 'eq', field: 'CompanyID', value: companyId },
               { op: 'eq', field: 'ContactID', value: contactId },
-              { op: 'gt', field: 'lastActivityDate', value: referenceDate },
             ],
           },
           { headers },
         ),
       );
 
-      const freshTickets = ticketsResp.data.items || [];
-      if (freshTickets.length === 0) {
+      const allTickets = allTicketsResp.data.items || [];
+      if (allTickets.length === 0) {
         console.timeEnd(`[SYNC-TOTAL] user:${userId}`);
         return;
       }
 
-      const ticketIds = freshTickets.map((t) => t.id);
+      // 3. FILTRAGE : On ne traite que les tickets modifiés depuis la dernière synchro
+      const ticketsToSync = allTickets.filter((t: any) => {
+        const lastActivity = new Date(t.lastActivityDate);
+        return lastActivity > referenceDate;
+      });
 
-      // 2. Récupération MASSIVE (sans filtre de date pour ne rien rater)
-      const [allNotesResp, allTimeResp] = await Promise.all([
-        firstValueFrom(
-          this.httpService.post(
-            'https://webservices16.autotask.net/ATServicesRest/V1.0/TicketNotes/query',
-            { filter: [{ op: 'in', field: 'ticketID', value: ticketIds }] },
-            { headers },
+      console.log(`[SYNC] ${ticketsToSync.length} tickets à mettre à jour pour l'utilisateur ${userId}`);
+
+      if (ticketsToSync.length === 0) {
+        console.timeEnd(`[SYNC-TOTAL] user:${userId}`);
+        return;
+      }
+
+      // 4. DÉCOUPAGE EN PAQUETS (CHUNKS) DE 20
+      // Autotask n'aime pas les filtres "IN" avec trop d'IDs
+      const chunkArray = (arr: any[], size: number) =>
+        Array.from({ length: Math.ceil(arr.length / size) }, (v, i) =>
+          arr.slice(i * size, i * size + size),
+        );
+
+      const ticketChunks = chunkArray(ticketsToSync, 20);
+
+      for (const chunk of ticketChunks) {
+        const chunkIds = chunk.map((t) => t.id);
+
+        // Récupération massive des notes et temps pour ce paquet de tickets
+        const [notesResp, timeResp] = await Promise.all([
+          firstValueFrom(
+            this.httpService.post(
+              'https://webservices16.autotask.net/ATServicesRest/V1.0/TicketNotes/query',
+              { filter: [{ op: 'in', field: 'ticketID', value: chunkIds }] },
+              { headers },
+            ),
           ),
-        ),
-        firstValueFrom(
-          this.httpService.post(
-            'https://webservices16.autotask.net/ATServicesRest/V1.0/TimeEntries/query',
-            { filter: [{ op: 'in', field: 'ticketID', value: ticketIds }] },
-            { headers },
+          firstValueFrom(
+            this.httpService.post(
+              'https://webservices16.autotask.net/ATServicesRest/V1.0/TimeEntries/query',
+              { filter: [{ op: 'in', field: 'ticketID', value: chunkIds }] },
+              { headers },
+            ),
           ),
-        ),
-      ]);
+        ]);
 
-      const allNotes = allNotesResp.data.items || [];
-      const allTimeEntries = allTimeResp.data.items || [];
+        const allNotes = notesResp.data.items || [];
+        const allTimeEntries = timeResp.data.items || [];
 
-      // 3. Traitement
-      await Promise.all(
-        freshTickets.map(async (ticket) => {
-          const techId = this.extractHumanResourceId(ticket);
-          const techName = techId
-            ? techMap.get(techId) || 'Inconnu'
-            : 'Inconnu';
+        // 5. TRAITEMENT DU PAQUET (UPSERT)
+        await Promise.all(
+          chunk.map(async (ticket: any) => {
+            const techId = this.extractHumanResourceId(ticket);
+            const techName = techId ? techMap.get(techId) || 'Inconnu' : 'Inconnu';
 
-          const localTicket = await this.prisma.ticket.upsert({
-            where: { autotaskTicketId: ticket.id },
-            update: {
-              status: ticket.status,
-              priority: ticket.priority,
-              lastActivityDate: ticket.lastActivityDate,
-              assignedResourceId: techId,
-              assignedResourceName: techName,
-              lastSync: new Date(),
-            },
-            create: {
-              userId,
-              autotaskTicketId: ticket.id,
-              ticketNumber: ticket.ticketNumber,
-              title: ticket.title,
-              description: ticket.description,
-              createDate: new Date(ticket.createDate),
-              status: ticket.status,
-              priority: ticket.priority,
-              companyAutotaskId: companyId,
-              contactAutotaskId: contactId,
-              authorName: `${user.firstName} ${user.lastName}`,
-              assignedResourceId: techId,
-              assignedResourceName: techName,
-              lastActivityDate: ticket.lastActivityDate,
-              lastSync: new Date(),
-            },
-          });
+            // Mise à jour ou création du ticket
+            const localTicket = await this.prisma.ticket.upsert({
+              where: { autotaskTicketId: ticket.id },
+              update: {
+                status: ticket.status,
+                priority: ticket.priority,
+                lastActivityDate: ticket.lastActivityDate,
+                assignedResourceId: techId,
+                assignedResourceName: techName,
+                lastSync: new Date(),
+              },
+              create: {
+                userId,
+                autotaskTicketId: ticket.id,
+                ticketNumber: ticket.ticketNumber,
+                title: ticket.title,
+                description: ticket.description,
+                createDate: new Date(ticket.createDate),
+                status: ticket.status,
+                priority: ticket.priority,
+                companyAutotaskId: companyId,
+                contactAutotaskId: contactId,
+                authorName: `${user.firstName} ${user.lastName}`,
+                assignedResourceId: techId,
+                assignedResourceName: techName,
+                lastActivityDate: ticket.lastActivityDate,
+                lastSync: new Date(),
+              },
+            });
 
-          const ticketNotes = allNotes.filter((n) => n.ticketID === ticket.id);
-          const ticketTimes = allTimeEntries.filter(
-            (te) => te.ticketID === ticket.id,
-          );
+            const ticketNotes = allNotes.filter((n: any) => n.ticketID === ticket.id);
+            const ticketTimes = allTimeEntries.filter((te: any) => te.ticketID === ticket.id);
 
-          await Promise.all([
-            // --- TRAITEMENT DES NOTES ---
-            // ... (début de la fonction inchangé)
-
-            // --- TRAITEMENT DES NOTES ---
-            ...ticketNotes.map((note) => {
+            // Traitement des Notes
+            const notePromises = ticketNotes.map((note: any) => {
               if (note.publish === 1 && note.noteType !== 13) {
-                const resId = note.creatorResourceID
-                  ? Number(note.creatorResourceID)
-                  : null;
-
-                // --- CORRECTION ICI : Définition explicite des types ---
+                const resId = note.creatorResourceID ? Number(note.creatorResourceID) : null;
+                
                 let authorName: string = 'Inconnu';
-                let localUserId: number | null = null; // Autorise number OU null
-                let authorContactId: number | null = note.creatorContactID
-                  ? Number(note.creatorContactID)
-                  : null;
+                let localUserId: number | null = null;
+                let authorContactId: number | null = note.creatorContactID ? Number(note.creatorContactID) : null;
                 let userType: 'user' | 'technician' = 'user';
 
-                if (resId === 29682975) {
-                  // CAS UTILISATEUR CONNECTÉ
-                  authorName = `[user] ${user.firstName} ${user.lastName}`;
+                if (resId === 29682975) { // ID de ton API User Autotask
+                  authorName = `${user.firstName} ${user.lastName}`;
                   localUserId = userId;
                   authorContactId = Number(user.autotaskContactId);
                   userType = 'user';
                 } else if (resId !== null) {
-                  // CAS TECHNICIEN
                   authorName = techMap.get(resId) || 'Technicien';
                   userType = 'technician';
                 }
@@ -383,11 +392,11 @@ export class TicketsService {
                     autotaskTicketId: BigInt(ticket.id),
                     autotaskMessageId: note.id,
                     sourceType: 'note',
-                    userType: userType,
+                    userType,
                     apiResourceId: resId,
                     authorAutotaskContactId: authorContactId,
-                    localUserId: localUserId, // Plus d'erreur ici
-                    authorName: authorName,
+                    localUserId,
+                    authorName,
                     content: note.description || '',
                     createdAt: new Date(note.createDateTime),
                     syncedAt: new Date(),
@@ -395,13 +404,11 @@ export class TicketsService {
                 });
               }
               return Promise.resolve();
-            }),
-            // ... (reste de la fonction inchangé)
+            });
 
-            // --- TRAITEMENT DES TEMPS ---
-            ...ticketTimes.map((entry) => {
+            // Traitement des Temps
+            const timePromises = ticketTimes.map((entry: any) => {
               const resId = Number(entry.resourceID);
-              // Calcul du temps (hoursToBill ou hoursWorked)
               const hours = entry.hoursWorked ? `[${entry.hoursWorked}h] ` : '';
 
               return this.prisma.ticketMessage.upsert({
@@ -425,10 +432,12 @@ export class TicketsService {
                   syncedAt: new Date(),
                 },
               });
-            }),
-          ]);
-        }),
-      );
+            });
+
+            await Promise.all([...notePromises, ...timePromises]);
+          }),
+        );
+      }
 
       console.timeEnd(`[SYNC-TOTAL] user:${userId}`);
     } catch (error) {
@@ -436,7 +445,7 @@ export class TicketsService {
       throw error;
     }
   }
-
+  
   // Nouvelle méthode pour récupérer les tickets depuis la DB locale (pour le frontend)
   // ... (méthodes existantes)
 

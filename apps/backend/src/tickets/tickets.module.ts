@@ -5,6 +5,7 @@ import { TicketsService } from './tickets.service';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { TicketsWorker } from './workers/tickets.worker';
+import { TicketsGateway } from './tickets.gateway';
 
 @Module({
   imports: [
@@ -17,7 +18,8 @@ import { TicketsWorker } from './workers/tickets.worker';
   controllers: [TicketsController],
   providers: [
     TicketsService,
-    TicketsWorker
+    TicketsWorker,
+    TicketsGateway
   ],
   exports: [TicketsService],
 })

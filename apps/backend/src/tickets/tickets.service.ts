@@ -4,7 +4,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../prisma.service';
 import { InjectQueue } from '@nestjs/bullmq'; // AJOUT
-import { Queue } from 'bullmq';               // AJOUT
+import { Queue } from 'bullmq'; // AJOUT
 
 @Injectable()
 export class TicketsService {
@@ -24,53 +24,71 @@ export class TicketsService {
   private ticketsCache = new Map<string, { data: any[]; timestamp: number }>();
   private CACHE_DURATION = 60 * 60 * 1000;
 
-  async getTicketsForUser(contactId: number, companyId: number, forceFresh = false) {
+  async getTicketsForUser(
+    contactId: number,
+    companyId: number,
+    forceFresh = false,
+  ) {
     const cacheKey = `tickets_${contactId}_${companyId}`;
-    let cached: { data: any[]; timestamp: number } | null = null; 
+    let cached: { data: any[]; timestamp: number } | null = null;
 
     if (!forceFresh) {
       const entry = this.ticketsCache.get(cacheKey);
       if (entry) {
         cached = entry;
-        if (Date.now() - cached.timestamp < this.CACHE_DURATION) return cached.data;
+        if (Date.now() - cached.timestamp < this.CACHE_DURATION)
+          return cached.data;
       }
     }
 
-    if (cached && (Date.now() - cached.timestamp < 30000)) {
-        this.ticketsCache.delete(cacheKey);
+    if (cached && Date.now() - cached.timestamp < 30000) {
+      this.ticketsCache.delete(cacheKey);
     }
 
-    const headers = { 
-        'ApiIntegrationCode': this.configService.get('AUTOTASK_API_INTEGRATION_CODE'), 
-        'UserName': this.configService.get('AUTOTASK_USERNAME'), 
-        'Secret': this.configService.get('AUTOTASK_SECRET'), 
-        'Content-Type': 'application/json' 
+    const headers = {
+      ApiIntegrationCode: this.configService.get(
+        'AUTOTASK_API_INTEGRATION_CODE',
+      ),
+      UserName: this.configService.get('AUTOTASK_USERNAME'),
+      Secret: this.configService.get('AUTOTASK_SECRET'),
+      'Content-Type': 'application/json',
     };
-    const url = 'https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/query';
-    const body = { filter: [{ op: "eq", field: "CompanyID", value: companyId }, { op: "eq", field: "ContactID", value: contactId }] };
+    const url =
+      'https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/query';
+    const body = {
+      filter: [
+        { op: 'eq', field: 'CompanyID', value: companyId },
+        { op: 'eq', field: 'ContactID', value: contactId },
+      ],
+    };
 
     try {
-      const response = await firstValueFrom(this.httpService.post(url, body, { headers }));
+      const response = await firstValueFrom(
+        this.httpService.post(url, body, { headers }),
+      );
       const tickets = response.data.items || [];
 
       // 1. On charge tous les techniciens une seule fois
-const techs = await this.prisma.technician.findMany();
-const techMap = new Map(techs.map(t => [t.id, t.fullName]));
+      const techs = await this.prisma.technician.findMany();
+      const techMap = new Map(techs.map((t) => [t.id, t.fullName]));
 
-// 2. On map les noms sans aucun appel SQL supplémentaire
-const ticketsWithNames = tickets.map((ticket: any) => {
-  const techResourceId = this.extractHumanResourceId(ticket);
+      // 2. On map les noms sans aucun appel SQL supplémentaire
+      const ticketsWithNames = tickets.map((ticket: any) => {
+        const techResourceId = this.extractHumanResourceId(ticket);
 
-  const assignedResourceName = techResourceId 
-    ? (techMap.get(techResourceId) || 'Inconnu') 
-    : 'Inconnu';
+        const assignedResourceName = techResourceId
+          ? techMap.get(techResourceId) || 'Inconnu'
+          : 'Inconnu';
 
-    // On retourne l'objet fusionné, sinon ticketsWithNames sera un tableau de 'undefined'
-  return { ...ticket, assignedResourceName };
-});
+        // On retourne l'objet fusionné, sinon ticketsWithNames sera un tableau de 'undefined'
+        return { ...ticket, assignedResourceName };
+      });
       // 3. On met en cache le résultat
 
-      this.ticketsCache.set(cacheKey, { data: ticketsWithNames, timestamp: Date.now() });
+      this.ticketsCache.set(cacheKey, {
+        data: ticketsWithNames,
+        timestamp: Date.now(),
+      });
       return ticketsWithNames;
     } catch (error) {
       throw new Error('Impossible de récupérer les tickets Autotask');
@@ -78,496 +96,624 @@ const ticketsWithNames = tickets.map((ticket: any) => {
   }
 
   private extractHumanResourceId(ticket: any): number | null {
-    const systemIds = [4, 29682909, 29682914, 29682921, 29682931, 29682932, 29682936, 29682946, 29682961, 29682962];
+    const systemIds = [
+      4, 29682909, 29682914, 29682921, 29682931, 29682932, 29682936, 29682946,
+      29682961, 29682962,
+    ];
     const candidates = [
       ticket.assignedResourceID,
       ticket.completedByResourceID,
       ticket.firstResponseInitiatingResourceID,
-      ticket.lastActivityResourceID
+      ticket.lastActivityResourceID,
     ];
-    return candidates.find(id => id && !systemIds.includes(id)) || null;
+    return candidates.find((id) => id && !systemIds.includes(id)) || null;
   }
 
   // apps/backend/src/tickets/tickets.service.ts
 
-async createTicketForUser(contactId: number, companyId: number, title: string, description: string, userId: number) {
-  // 1. Récupérer les infos de l'utilisateur pour le authorName
-  const user = await this.prisma.user.findUnique({
-    where: { id: userId },
-    select: { firstName: true, lastName: true }
-  });
-  const authorFullName = user ? `${user.firstName} ${user.lastName}` : 'Utilisateur Portail';
-
-  const tempUniqueId = BigInt(-Date.now());
-
-  // 2. Création initiale avec les infos que l'on possède déjà
-  const localTicket = await this.prisma.ticket.create({
-    data: {
-      userId: userId,
-      title: title,
-      description: description,
-      status: 1,
-      priority: 3, // Priorité par défaut
-      createDate: new Date(),
-      lastSync: new Date(),
-      autotaskTicketId: tempUniqueId,
-      ticketNumber: `TEMP-${Date.now()}`,
-      authorName: authorFullName,
-      companyAutotaskId: BigInt(companyId),
-      contactAutotaskId: BigInt(contactId),
-    },
-  });
-
-  console.log(`[QUEUE] Envoi du ticket local #${localTicket.id} vers la file d'attente...`);
-
-  // 2. AU LIEU de faire le try/catch avec l'API ici, on ajoute un JOB dans la file
-  await this.autotaskQueue.add('create-ticket', {
-    localTicketId: localTicket.id, // On envoie l'ID local pour que le worker puisse le mettre à jour
-    contactId,
-    companyId,
-    title,
-    description,
-    userId
-  }, {
-    attempts: 3, // Si Autotask bug, on réessaie 3 fois
-    backoff: { type: 'exponential', delay: 2000 } // Attend 2s, 4s, 8s...
-  });
-
-  // On renvoie le ticket local immédiatement au controller
-  console.log(`[QUEUE] Job 'create-ticket' ajouté avec succès !`);
-  return localTicket;
-}
-
-async finalizeTicketCreation(localTicketId: number, autotaskId: number) {
-  // 1. On récupère le ticket complet depuis Autotask pour avoir le vrai TicketNumber (ex: T2026...)
-  const headers = {
-    'ApiIntegrationCode': this.configService.get('AUTOTASK_API_INTEGRATION_CODE'),
-    'UserName': this.configService.get('AUTOTASK_USERNAME'),
-    'Secret': this.configService.get('AUTOTASK_SECRET'),
-    'Content-Type': 'application/json',
-  };
-
-  const response = await firstValueFrom(
-    this.httpService.get(`https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/${autotaskId}`, { headers })
-  );
-  const fullTicket = response.data.item;
-
-  // 2. On met à jour notre base de données locale
-  return await this.prisma.ticket.update({
-    where: { id: localTicketId },
-    data: {
-      autotaskTicketId: BigInt(autotaskId),
-      ticketNumber: fullTicket.ticketNumber,
-      priority: fullTicket.priority,
-      lastActivityDate: fullTicket.lastActivityDate,
-      lastSync: new Date(),
-    },
-  });
-}
-
-  // --- LOGIQUE DE SYNCHRO ULTRA-RAPIDE (BASÉE SUR LASTSYNC) ---
-  async syncTicketsAndMessagesForUser(userId: number, contactId: number, companyId: number) {
-  const user = await this.prisma.user.findUnique({
-    where: { id: userId },
-    select: { autotaskContactId: true, firstName: true, lastName: true },
-  });
-  if (!user) throw new Error('User not found for sync');
-
-  console.time(`[SYNC-TOTAL] user:${userId}`);
-
-  try {
-    // 1. Charger les techniciens (Rapide)
-    const techs = await this.prisma.technician.findMany();
-    const techMap = new Map(techs.map(t => [t.id, t.fullName]));
-
-    const lastGlobalSync = await this.prisma.ticket.findFirst({
-      where: { userId: userId },
-      orderBy: { lastSync: 'desc' },
-      select: { lastSync: true }
-    });
-    const referenceDate = lastGlobalSync?.lastSync ? lastGlobalSync.lastSync.toISOString() : '2000-01-01T00:00:00Z';
-
-    // 2. Appel API Tickets
-    console.time('[SYNC] 1. API-Query-Tickets');
-    const headers = { 
-        'ApiIntegrationCode': this.configService.get('AUTOTASK_API_INTEGRATION_CODE'), 
-        'UserName': this.configService.get('AUTOTASK_USERNAME'), 
-        'Secret': this.configService.get('AUTOTASK_SECRET'),
-        'Content-Type': 'application/json'
-    };
-    const ticketsResp = await firstValueFrom(this.httpService.post(
-      'https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/query',
-      { filter: [
-        { op: "eq", field: "CompanyID", value: companyId }, 
-        { op: "eq", field: "ContactID", value: contactId },
-        { op: "gt", field: "lastActivityDate", value: referenceDate }
-      ]}, { headers }
-    ));
-    console.timeEnd('[SYNC] 1. API-Query-Tickets');
-
-    const freshTickets = ticketsResp.data.items || [];
-    if (freshTickets.length === 0) {
-        console.timeEnd(`[SYNC-TOTAL] user:${userId}`);
-        return;
-    }
-
-    const ticketIds = freshTickets.map(t => t.id);
-
-    // 3. Appel API Notes et Temps (Groupés)
-    console.time('[SYNC] 2. API-Query-Notes-And-Time');
-    const [allNotesResp, allTimeResp] = await Promise.all([
-      firstValueFrom(this.httpService.post(
-        'https://webservices16.autotask.net/ATServicesRest/V1.0/TicketNotes/query',
-        { filter: [{ op: "in", field: "ticketID", value: ticketIds }] }, { headers }
-      )),
-      firstValueFrom(this.httpService.post(
-        'https://webservices16.autotask.net/ATServicesRest/V1.0/TimeEntries/query',
-        { filter: [{ op: "in", field: "ticketID", value: ticketIds }] }, { headers }
-      ))
-    ]);
-    console.timeEnd('[SYNC] 2. API-Query-Notes-And-Time');
-
-    console.time('[SYNC] 3. Database-Upsert-Parallel');
-    const allNotes = allNotesResp.data.items || [];
-    const allTimeEntries = allTimeResp.data.items || [];
-
-    // --- OPTIMISATION : On traite tous les tickets en parallèle ---
-    await Promise.all(freshTickets.map(async (ticket) => {
-      const techId = this.extractHumanResourceId(ticket);
-      const techName = techId ? (techMap.get(techId) || 'Inconnu') : 'Inconnu';
-      
-      const localTicket = await this.prisma.ticket.upsert({
-        where: { autotaskTicketId: ticket.id },
-        update: {
-          title: ticket.title,
-          status: ticket.status,
-          priority: ticket.priority,
-          lastActivityDate: ticket.lastActivityDate,
-          lastSync: new Date(),
-        },
-        create: {
-          userId,
-          autotaskTicketId: ticket.id,
-          ticketNumber: ticket.ticketNumber,
-          title: ticket.title,
-          description: ticket.description,
-          createDate: ticket.createDate,
-          status: ticket.status,
-          priority: ticket.priority,
-          companyAutotaskId: companyId,
-          contactAutotaskId: contactId,
-          authorName: `${user.firstName} ${user.lastName}`,
-          assignedResourceName: techName,
-          lastActivityDate: ticket.lastActivityDate,
-          lastSync: new Date(),
-        },
-      });
-
-      const ticketNotes = allNotes.filter(n => n.ticketID === ticket.id);
-      const ticketTimes = allTimeEntries.filter(te => te.ticketID === ticket.id);
-
-      // Traitement des notes et temps pour ce ticket en parallèle aussi
-      await Promise.all([
-        ...ticketNotes.map(note => {
-          const noteDate = new Date(note.createDateTime);
-          if (note.publish === 1 && note.noteType !== 13 && noteDate > (lastGlobalSync?.lastSync || new Date(0))) {
-            const resId = Number(note.creatorResourceID);
-            const isUser = (resId === 29682975 || resId === Number(user.autotaskContactId));
-            return this.prisma.ticketMessage.upsert({
-              where: { autotaskMessageId_sourceType: { autotaskMessageId: note.id, sourceType: 'note' } },
-              update: { syncedAt: new Date(), title: note.title },
-              create: {
-                ticketId: localTicket.id,
-                autotaskTicketId: BigInt(ticket.id),
-                autotaskMessageId: note.id,
-                sourceType: 'note',
-                userType: isUser ? 'user' : 'technician',
-                authorName: isUser ? `[user]: ${user.firstName} ${user.lastName}` : (techMap.get(resId) || 'Inconnu'),
-                content: note.description,
-                createdAt: note.createDateTime,
-                syncedAt: new Date(),
-              }
-            });
-          }
-          return Promise.resolve();
-        }),
-        ...ticketTimes.map(entry => {
-          if (new Date(entry.startDateTime) > (lastGlobalSync?.lastSync || new Date(0))) {
-            return this.prisma.ticketMessage.upsert({
-              where: { autotaskMessageId_sourceType: { autotaskMessageId: entry.id, sourceType: 'time_entry' } },
-              update: { syncedAt: new Date() },
-              create: {
-                ticketId: localTicket.id,
-                autotaskTicketId: BigInt(ticket.id),
-                autotaskMessageId: entry.id,
-                sourceType: 'time_entry',
-                userType: 'technician',
-                authorName: techMap.get(entry.resourceID) || 'Inconnu',
-                content: `[Durée: ${entry.hoursWorked}h] ${entry.summaryNotes || ''}`,
-                createdAt: entry.startDateTime,
-                syncedAt: new Date(),
-              }
-            });
-          }
-          return Promise.resolve();
-        })
-      ]);
-    }));
-
-    console.timeEnd('[SYNC] 3. Database-Upsert-Parallel');
-    console.timeEnd(`[SYNC-TOTAL] user:${userId}`);
-
-  } catch (error) {
-    console.error(`[SYNC] Erreur critique:`, error);
-  }
-}
-
-    // Nouvelle méthode pour récupérer les tickets depuis la DB locale (pour le frontend)
- // ... (méthodes existantes)
-
-  async getUserTicketsFromDb(userId: number) {
-  try {
-    const tickets = await this.prisma.ticket.findMany({
-      where: { userId: Number(userId) },
-      orderBy: { createDate: 'desc' },
-    });
-    
-    // MODIF ICI : Convertir les BigInt pour éviter l'erreur de sérialisation JSON
-    return tickets.map(ticket => ({
-      ...ticket,
-      autotaskTicketId: ticket.autotaskTicketId.toString(),
-      companyAutotaskId: ticket.companyAutotaskId?.toString(),
-      contactAutotaskId: ticket.contactAutotaskId?.toString(),
-    }));
-  } catch (error) {
-    throw error;
-  }
-}
-
-// À ajouter à la fin de la classe TicketsService
-private async getAuthorName(resourceId: number | null): Promise<string> {
-  // Si l'id est null, on retourne "Inconnu" comme demandé
-  if (!resourceId) return 'Inconnu';
-
-  try {
-    const tech = await this.prisma.technician.findUnique({
-      where: { id: Number(resourceId) },
-      select: { fullName: true }
-    });
-
-    // Si on trouve le tech dans la DB, on rend son nom, sinon "Inconnu"
-    return tech ? tech.fullName : 'Inconnu';
-  } catch (error) {
-    return 'Inconnu';
-  }
-}
-async createInAutotask(contactId: number, companyId: number, title: string, description: string) {
-  const headers = { 
-    'ApiIntegrationCode': this.configService.get('AUTOTASK_API_INTEGRATION_CODE'), 
-    'UserName': this.configService.get('AUTOTASK_USERNAME'), 
-    'Secret': this.configService.get('AUTOTASK_SECRET'),
-    'Content-Type': 'application/json'
-  };
-  const url = 'https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets';
-  const body = {
-    companyID: Number(companyId),
-    contactID: Number(contactId),
-    title: title,
-    description: description,
-    queueID: 29682833,      // La file d'attente obligatoire
-    status: 1,              // Nouveau
-    priority: 3,            // Priorité (ton CURL utilise 3)
-    source: -1,             // Source
-    ticketType: 1,          // Type de ticket
-    billingCodeID: 29682801 // Le Work Type facturable (très important pour Autotask)
-  };
-  
-  
-
-  const response = await firstValueFrom(this.httpService.post(url, body, { headers }));
-
-  // --- AJOUT DE LOGS POUR ANALYSE ---
-  console.log('\n[DEBUG-AUTOTASK] Réponse brute du POST creation:');
-  console.log(JSON.stringify(response.data, null, 2));
-  return response.data; // Contient l'ID et le ticketNumber
-}
-
-
-async getTicketByAutotaskId(autotaskTicketId: number, userId: number) {
-  return this.prisma.ticket.findFirst({
-    where: {
-      autotaskTicketId,
-      userId,  // ← sécurité : on vérifie que c'est bien le ticket de cet utilisateur
-    },
-    select: {
-      id: true,
-      autotaskTicketId: true,
-      ticketNumber: true,
-      title: true,
-      description: true,
-      createDate: true,
-      lastActivityDate: true,
-      status: true,
-      priority: true,
-      assignedResourceName: true,
-      assignedResourceId: true,
-    },
-  });
-}
-
-async getTicketMessages(autotaskTicketId: number) {
-
-  if (BigInt(autotaskTicketId) < 0n) {
-    return [];
-  }
-
-  return this.prisma.ticketMessage.findMany({
-    where: { autotaskTicketId: BigInt(autotaskTicketId) },
-    orderBy: { createdAt: 'asc' }, // Chronologique
-    select: {
-      id: true,
-      userType: true,
-      authorName: true,
-      content: true,
-      createdAt: true,
-      sourceType: true, // 'note' ou 'time_entry'
-      apiResourceId: true,
-      localUserId: true,
-    },
-  });
-}
-
-async createNoteForTicket(
-  autotaskTicketId: number,
-  createdByContactID: number,
-  userId: number,
-  content: string,
-) {
-  try {
-    let finalAutotaskId = BigInt(autotaskTicketId);
-
-    // --- SÉCURITÉ ID NÉGATIF ---
-    if (finalAutotaskId < 0n) {
-      console.log(`[NOTE] ID temporaire détecté (${finalAutotaskId}). Tentative de récupération de l'ID réel...`);
-      
-      // On cherche le ticket par son ID local (qu'on a stocké dans autotaskTicketId temporairement)
-      const ticketInDb = await this.prisma.ticket.findFirst({
-        where: { userId: userId, autotaskTicketId: finalAutotaskId },
-        select: { autotaskTicketId: true, id: true }
-      });
-
-      // Si le ticket n'a toujours pas d'ID positif en base, c'est que le worker 'create-ticket' n'a pas fini
-      if (!ticketInDb || ticketInDb.autotaskTicketId < 0n) {
-        throw new Error(`Le ticket n'est pas encore synchronisé avec Autotask (ID: ${finalAutotaskId}). BullMQ va réessayer...`);
-      }
-      
-      finalAutotaskId = ticketInDb.autotaskTicketId;
-      console.log(`[NOTE] ID réel trouvé : ${finalAutotaskId}. On continue.`);
-    }
-
-    // 1. Récupérer les infos de l'utilisateur
+  async createTicketForUser(
+    contactId: number,
+    companyId: number,
+    title: string,
+    description: string,
+    userId: number,
+  ) {
+    // 1. Récupérer les infos de l'utilisateur pour le authorName
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { firstName: true, lastName: true }
+      select: { firstName: true, lastName: true },
+    });
+    const authorFullName = user
+      ? `${user.firstName} ${user.lastName}`
+      : 'Utilisateur Portail';
+
+    const tempUniqueId = BigInt(-Date.now());
+
+    // 2. Création initiale avec les infos que l'on possède déjà
+    const localTicket = await this.prisma.ticket.create({
+      data: {
+        userId: userId,
+        title: title,
+        description: description,
+        status: 1,
+        priority: 3, // Priorité par défaut
+        createDate: new Date(),
+        lastSync: new Date(),
+        autotaskTicketId: tempUniqueId,
+        ticketNumber: `TEMP-${Date.now()}`,
+        authorName: authorFullName,
+        companyAutotaskId: BigInt(companyId),
+        contactAutotaskId: BigInt(contactId),
+      },
     });
 
-    const authorFullName = user ? `[user]: ${user.firstName} ${user.lastName}` : `[user]: Client Portail`;
-    const autotaskNoteTitle = user ? `Note par ${user.firstName} ${user.lastName}` : "Note client via portail";
+    console.log(
+      `[QUEUE] Envoi du ticket local #${localTicket.id} vers la file d'attente...`,
+    );
 
+    // 2. AU LIEU de faire le try/catch avec l'API ici, on ajoute un JOB dans la file
+    await this.autotaskQueue.add(
+      'create-ticket',
+      {
+        localTicketId: localTicket.id, // On envoie l'ID local pour que le worker puisse le mettre à jour
+        contactId,
+        companyId,
+        title,
+        description,
+        userId,
+      },
+      {
+        attempts: 3, // Si Autotask bug, on réessaie 3 fois
+        backoff: { type: 'exponential', delay: 2000 }, // Attend 2s, 4s, 8s...
+      },
+    );
+
+    // On renvoie le ticket local immédiatement au controller
+    console.log(`[QUEUE] Job 'create-ticket' ajouté avec succès !`);
+    return localTicket;
+  }
+
+  // src/tickets/tickets.service.ts
+
+  async finalizeTicketCreation(localTicketId: number, autotaskId: number) {
+    // 1. On récupère le ticket complet depuis Autotask pour avoir le vrai TicketNumber
     const headers = {
-      'ApiIntegrationCode': this.configService.get('AUTOTASK_API_INTEGRATION_CODE'),
-      'UserName': this.configService.get('AUTOTASK_USERNAME'),
-      'Secret': this.configService.get('AUTOTASK_SECRET'),
+      ApiIntegrationCode: this.configService.get(
+        'AUTOTASK_API_INTEGRATION_CODE',
+      ),
+      UserName: this.configService.get('AUTOTASK_USERNAME'),
+      Secret: this.configService.get('AUTOTASK_SECRET'),
       'Content-Type': 'application/json',
     };
 
-    const payload = {
-      createdByContactID: Number(createdByContactID),
-      title: autotaskNoteTitle,
-      description: content,
-      noteType: 1,
-      publish: 1,
-    };
-
-    // 2. Création dans Autotask avec le finalAutotaskId (qui est maintenant forcément positif)
     const response = await firstValueFrom(
-      this.httpService.post(
-        `https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/${finalAutotaskId}/Notes`,
-        payload,
-        { headers }
-      )
+      this.httpService.get(
+        `https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/${autotaskId}`,
+        { headers },
+      ),
     );
+    const fullTicket = response.data.item;
 
-    const autotaskNoteId = response.data.itemId;
-
-    // 3. Récupère le ticket local pour la relation
-    const localTicket = await this.prisma.ticket.findFirst({
-      where: { autotaskTicketId: finalAutotaskId },
-      select: { id: true },
-    });
-
-    if (!localTicket) throw new Error('Ticket local non trouvé après création de note');
-
-    // 4. Enregistrement local
-    return await this.prisma.ticketMessage.create({
+    // 2. On met à jour notre base de données locale
+    const updated = await this.prisma.ticket.update({
+      where: { id: localTicketId },
       data: {
-        autotaskMessageId: BigInt(autotaskNoteId), 
-        ticketId: localTicket.id,
-        autotaskTicketId: finalAutotaskId, 
-        userType: 'user',
-        authorName: authorFullName, 
-        authorAutotaskContactId: Number(createdByContactID), 
-        localUserId: userId,
-        apiResourceId: 29682975,
-        content: content,
-        createdAt: new Date(),
-        syncedAt: new Date(),
-        sourceType: 'note',
+        autotaskTicketId: BigInt(autotaskId),
+        ticketNumber: fullTicket.ticketNumber,
+        priority: fullTicket.priority,
+        lastActivityDate: fullTicket.lastActivityDate,
+        lastSync: new Date(),
       },
     });
-  } catch (error) {
-    // Si c'est l'erreur "Le ticket n'est pas encore prêt", on la relance pour BullMQ
-    // Si c'est une erreur 500 d'Autotask, on log et on relance aussi
-    console.error('[CREATE NOTE] Erreur :', error.response?.data || error.message);
-    throw error; 
+
+    // 3. CRITIQUE : Conversion des BigInt en String pour le WebSocket
+    // Si on renvoie l'objet 'updated' brut, le Gateway plantera à la sérialisation JSON
+    return {
+      ...updated,
+      autotaskTicketId: updated.autotaskTicketId.toString(),
+      companyAutotaskId: updated.companyAutotaskId?.toString(),
+      contactAutotaskId: updated.contactAutotaskId?.toString(),
+    };
   }
-}
 
+  // --- LOGIQUE DE SYNCHRO ULTRA-RAPIDE (BASÉE SUR LASTSYNC) ---
+  async syncTicketsAndMessagesForUser(
+    userId: number,
+    contactId: number,
+    companyId: number,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { autotaskContactId: true, firstName: true, lastName: true },
+    });
+    if (!user) throw new Error('User not found for sync');
 
-// src/tickets/tickets.service.ts
+    console.time(`[SYNC-TOTAL] user:${userId}`);
 
-// --- MÉTHODES POUR AJOUTER AUX FILES (APPELÉES PAR LES CONTROLLERS) ---
+    try {
+      const techs = await this.prisma.technician.findMany();
+      const techMap = new Map(techs.map((t) => [t.id, t.fullName]));
 
-async queueSyncUser(userId: number, contactId: number, companyId: number) {
-  await this.autotaskQueue.add('sync-user', {
-    userId,
-    contactId,
-    companyId,
-  }, {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 10000 }
-  });
-}
+      // On garde referenceDate uniquement pour filtrer les TICKETS (performance)
+      const lastGlobalSync = await this.prisma.ticket.findFirst({
+        where: { userId: userId },
+        orderBy: { lastSync: 'desc' },
+        select: { lastSync: true },
+      });
+      const referenceDate = lastGlobalSync?.lastSync
+        ? lastGlobalSync.lastSync.toISOString()
+        : '2000-01-01T00:00:00Z';
 
-async queueCreateNote(autotaskTicketId: number, contactId: number, userId: number, content: string) {
-  // On ajoute le job à la file
-  await this.autotaskQueue.add('create-note', {
-    autotaskTicketId,
-    contactId, // correspond à createdByContactID
-    userId,
-    content,
-  }, {
-    attempts: 5,
-    backoff: { 
-      type: 'exponential', 
-      delay: 10000 
-    },
-    removeOnComplete: { count: 50 },
-    removeOnFail: { count: 100 }
-  });
-}
+      const headers = {
+        ApiIntegrationCode: this.configService.get(
+          'AUTOTASK_API_INTEGRATION_CODE',
+        ),
+        UserName: this.configService.get('AUTOTASK_USERNAME'),
+        Secret: this.configService.get('AUTOTASK_SECRET'),
+        'Content-Type': 'application/json',
+      };
 
-// Garde tes méthodes originales (syncTicketsAndMessagesForUser, createNoteForTicket, etc.) 
-// EXACTEMENT comme elles sont, le Worker va les appeler.
+      // 1. Récupération des tickets modifiés
+      const ticketsResp = await firstValueFrom(
+        this.httpService.post(
+          'https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/query',
+          {
+            filter: [
+              { op: 'eq', field: 'CompanyID', value: companyId },
+              { op: 'eq', field: 'ContactID', value: contactId },
+              { op: 'gt', field: 'lastActivityDate', value: referenceDate },
+            ],
+          },
+          { headers },
+        ),
+      );
 
+      const freshTickets = ticketsResp.data.items || [];
+      if (freshTickets.length === 0) {
+        console.timeEnd(`[SYNC-TOTAL] user:${userId}`);
+        return;
+      }
+
+      const ticketIds = freshTickets.map((t) => t.id);
+
+      // 2. Récupération MASSIVE (sans filtre de date pour ne rien rater)
+      const [allNotesResp, allTimeResp] = await Promise.all([
+        firstValueFrom(
+          this.httpService.post(
+            'https://webservices16.autotask.net/ATServicesRest/V1.0/TicketNotes/query',
+            { filter: [{ op: 'in', field: 'ticketID', value: ticketIds }] },
+            { headers },
+          ),
+        ),
+        firstValueFrom(
+          this.httpService.post(
+            'https://webservices16.autotask.net/ATServicesRest/V1.0/TimeEntries/query',
+            { filter: [{ op: 'in', field: 'ticketID', value: ticketIds }] },
+            { headers },
+          ),
+        ),
+      ]);
+
+      const allNotes = allNotesResp.data.items || [];
+      const allTimeEntries = allTimeResp.data.items || [];
+
+      // 3. Traitement
+      await Promise.all(
+        freshTickets.map(async (ticket) => {
+          const techId = this.extractHumanResourceId(ticket);
+          const techName = techId
+            ? techMap.get(techId) || 'Inconnu'
+            : 'Inconnu';
+
+          const localTicket = await this.prisma.ticket.upsert({
+            where: { autotaskTicketId: ticket.id },
+            update: {
+              status: ticket.status,
+              priority: ticket.priority,
+              lastActivityDate: ticket.lastActivityDate,
+              assignedResourceId: techId,
+              assignedResourceName: techName,
+              lastSync: new Date(),
+            },
+            create: {
+              userId,
+              autotaskTicketId: ticket.id,
+              ticketNumber: ticket.ticketNumber,
+              title: ticket.title,
+              description: ticket.description,
+              createDate: new Date(ticket.createDate),
+              status: ticket.status,
+              priority: ticket.priority,
+              companyAutotaskId: companyId,
+              contactAutotaskId: contactId,
+              authorName: `${user.firstName} ${user.lastName}`,
+              assignedResourceId: techId,
+              assignedResourceName: techName,
+              lastActivityDate: ticket.lastActivityDate,
+              lastSync: new Date(),
+            },
+          });
+
+          const ticketNotes = allNotes.filter((n) => n.ticketID === ticket.id);
+          const ticketTimes = allTimeEntries.filter(
+            (te) => te.ticketID === ticket.id,
+          );
+
+          await Promise.all([
+            // --- TRAITEMENT DES NOTES ---
+            // ... (début de la fonction inchangé)
+
+            // --- TRAITEMENT DES NOTES ---
+            ...ticketNotes.map((note) => {
+              if (note.publish === 1 && note.noteType !== 13) {
+                const resId = note.creatorResourceID
+                  ? Number(note.creatorResourceID)
+                  : null;
+
+                // --- CORRECTION ICI : Définition explicite des types ---
+                let authorName: string = 'Inconnu';
+                let localUserId: number | null = null; // Autorise number OU null
+                let authorContactId: number | null = note.creatorContactID
+                  ? Number(note.creatorContactID)
+                  : null;
+                let userType: 'user' | 'technician' = 'user';
+
+                if (resId === 29682975) {
+                  // CAS UTILISATEUR CONNECTÉ
+                  authorName = `[user] ${user.firstName} ${user.lastName}`;
+                  localUserId = userId;
+                  authorContactId = Number(user.autotaskContactId);
+                  userType = 'user';
+                } else if (resId !== null) {
+                  // CAS TECHNICIEN
+                  authorName = techMap.get(resId) || 'Technicien';
+                  userType = 'technician';
+                }
+
+                return this.prisma.ticketMessage.upsert({
+                  where: {
+                    autotaskMessageId_sourceType: {
+                      autotaskMessageId: note.id,
+                      sourceType: 'note',
+                    },
+                  },
+                  update: { syncedAt: new Date(), content: note.description },
+                  create: {
+                    ticketId: localTicket.id,
+                    autotaskTicketId: BigInt(ticket.id),
+                    autotaskMessageId: note.id,
+                    sourceType: 'note',
+                    userType: userType,
+                    apiResourceId: resId,
+                    authorAutotaskContactId: authorContactId,
+                    localUserId: localUserId, // Plus d'erreur ici
+                    authorName: authorName,
+                    content: note.description || '',
+                    createdAt: new Date(note.createDateTime),
+                    syncedAt: new Date(),
+                  },
+                });
+              }
+              return Promise.resolve();
+            }),
+            // ... (reste de la fonction inchangé)
+
+            // --- TRAITEMENT DES TEMPS ---
+            ...ticketTimes.map((entry) => {
+              const resId = Number(entry.resourceID);
+              // Calcul du temps (hoursToBill ou hoursWorked)
+              const hours = entry.hoursWorked ? `[${entry.hoursWorked}h] ` : '';
+
+              return this.prisma.ticketMessage.upsert({
+                where: {
+                  autotaskMessageId_sourceType: {
+                    autotaskMessageId: entry.id,
+                    sourceType: 'time_entry',
+                  },
+                },
+                update: { syncedAt: new Date() },
+                create: {
+                  ticketId: localTicket.id,
+                  autotaskTicketId: BigInt(ticket.id),
+                  autotaskMessageId: entry.id,
+                  sourceType: 'time_entry',
+                  userType: 'technician',
+                  apiResourceId: resId,
+                  authorName: techMap.get(resId) || 'Technicien',
+                  content: `${hours}${entry.summaryNotes || ''}`,
+                  createdAt: new Date(entry.startDateTime),
+                  syncedAt: new Date(),
+                },
+              });
+            }),
+          ]);
+        }),
+      );
+
+      console.timeEnd(`[SYNC-TOTAL] user:${userId}`);
+    } catch (error) {
+      console.error(`[SYNC] Erreur :`, error.message);
+      throw error;
+    }
+  }
+
+  // Nouvelle méthode pour récupérer les tickets depuis la DB locale (pour le frontend)
+  // ... (méthodes existantes)
+
+  async getUserTicketsFromDb(userId: number) {
+    try {
+      const tickets = await this.prisma.ticket.findMany({
+        where: { userId: Number(userId) },
+        orderBy: { createDate: 'desc' },
+      });
+
+      // MODIF ICI : Convertir les BigInt pour éviter l'erreur de sérialisation JSON
+      return tickets.map((ticket) => ({
+        ...ticket,
+        autotaskTicketId: ticket.autotaskTicketId.toString(),
+        companyAutotaskId: ticket.companyAutotaskId?.toString(),
+        contactAutotaskId: ticket.contactAutotaskId?.toString(),
+      }));
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  // À ajouter à la fin de la classe TicketsService
+  private async getAuthorName(resourceId: number | null): Promise<string> {
+    // Si l'id est null, on retourne "Inconnu" comme demandé
+    if (!resourceId) return 'Inconnu';
+
+    try {
+      const tech = await this.prisma.technician.findUnique({
+        where: { id: Number(resourceId) },
+        select: { fullName: true },
+      });
+
+      // Si on trouve le tech dans la DB, on rend son nom, sinon "Inconnu"
+      return tech ? tech.fullName : 'Inconnu';
+    } catch (error) {
+      return 'Inconnu';
+    }
+  }
+  async createInAutotask(
+    contactId: number,
+    companyId: number,
+    title: string,
+    description: string,
+  ) {
+    const headers = {
+      ApiIntegrationCode: this.configService.get(
+        'AUTOTASK_API_INTEGRATION_CODE',
+      ),
+      UserName: this.configService.get('AUTOTASK_USERNAME'),
+      Secret: this.configService.get('AUTOTASK_SECRET'),
+      'Content-Type': 'application/json',
+    };
+    const url =
+      'https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets';
+    const body = {
+      companyID: Number(companyId),
+      contactID: Number(contactId),
+      title: title,
+      description: description,
+      queueID: 29682833, // La file d'attente obligatoire
+      status: 1, // Nouveau
+      priority: 3, // Priorité (ton CURL utilise 3)
+      source: -1, // Source
+      ticketType: 1, // Type de ticket
+      billingCodeID: 29682801, // Le Work Type facturable (très important pour Autotask)
+    };
+
+    const response = await firstValueFrom(
+      this.httpService.post(url, body, { headers }),
+    );
+
+    // --- AJOUT DE LOGS POUR ANALYSE ---
+    console.log('\n[DEBUG-AUTOTASK] Réponse brute du POST creation:');
+    console.log(JSON.stringify(response.data, null, 2));
+    return response.data; // Contient l'ID et le ticketNumber
+  }
+
+  async getTicketByAutotaskId(autotaskTicketId: number, userId: number) {
+    return this.prisma.ticket.findFirst({
+      where: {
+        autotaskTicketId,
+        userId, // ← sécurité : on vérifie que c'est bien le ticket de cet utilisateur
+      },
+      select: {
+        id: true,
+        autotaskTicketId: true,
+        ticketNumber: true,
+        title: true,
+        description: true,
+        createDate: true,
+        lastActivityDate: true,
+        status: true,
+        priority: true,
+        assignedResourceName: true,
+        assignedResourceId: true,
+      },
+    });
+  }
+
+  async getTicketMessages(autotaskTicketId: number) {
+    if (BigInt(autotaskTicketId) < 0n) {
+      return [];
+    }
+
+    return this.prisma.ticketMessage.findMany({
+      where: { autotaskTicketId: BigInt(autotaskTicketId) },
+      orderBy: { createdAt: 'asc' }, // Chronologique
+      select: {
+        id: true,
+        userType: true,
+        authorName: true,
+        content: true,
+        createdAt: true,
+        sourceType: true, // 'note' ou 'time_entry'
+        apiResourceId: true,
+        localUserId: true,
+      },
+    });
+  }
+
+  async createNoteForTicket(
+    autotaskTicketId: number,
+    createdByContactID: number,
+    userId: number,
+    content: string,
+  ) {
+    try {
+      let finalAutotaskId = BigInt(autotaskTicketId);
+
+      // --- SÉCURITÉ ID NÉGATIF ---
+      if (finalAutotaskId < 0n) {
+        console.log(
+          `[NOTE] ID temporaire détecté (${finalAutotaskId}). Tentative de récupération de l'ID réel...`,
+        );
+
+        // On cherche le ticket par son ID local (qu'on a stocké dans autotaskTicketId temporairement)
+        const ticketInDb = await this.prisma.ticket.findFirst({
+          where: { userId: userId, autotaskTicketId: finalAutotaskId },
+          select: { autotaskTicketId: true, id: true },
+        });
+
+        // Si le ticket n'a toujours pas d'ID positif en base, c'est que le worker 'create-ticket' n'a pas fini
+        if (!ticketInDb || ticketInDb.autotaskTicketId < 0n) {
+          throw new Error(
+            `Le ticket n'est pas encore synchronisé avec Autotask (ID: ${finalAutotaskId}). BullMQ va réessayer...`,
+          );
+        }
+
+        finalAutotaskId = ticketInDb.autotaskTicketId;
+        console.log(`[NOTE] ID réel trouvé : ${finalAutotaskId}. On continue.`);
+      }
+
+      // 1. Récupérer les infos de l'utilisateur
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { firstName: true, lastName: true },
+      });
+
+      const authorFullName = user
+        ? `[user]: ${user.firstName} ${user.lastName}`
+        : `[user]: Client Portail`;
+      const autotaskNoteTitle = user
+        ? `Note par ${user.firstName} ${user.lastName}`
+        : 'Note client via portail';
+
+      const headers = {
+        ApiIntegrationCode: this.configService.get(
+          'AUTOTASK_API_INTEGRATION_CODE',
+        ),
+        UserName: this.configService.get('AUTOTASK_USERNAME'),
+        Secret: this.configService.get('AUTOTASK_SECRET'),
+        'Content-Type': 'application/json',
+      };
+
+      const payload = {
+        createdByContactID: Number(createdByContactID),
+        title: autotaskNoteTitle,
+        description: content,
+        noteType: 1,
+        publish: 1,
+      };
+
+      // 2. Création dans Autotask avec le finalAutotaskId (qui est maintenant forcément positif)
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `https://webservices16.autotask.net/ATServicesRest/V1.0/Tickets/${finalAutotaskId}/Notes`,
+          payload,
+          { headers },
+        ),
+      );
+
+      const autotaskNoteId = response.data.itemId;
+
+      // 3. Récupère le ticket local pour la relation
+      const localTicket = await this.prisma.ticket.findFirst({
+        where: { autotaskTicketId: finalAutotaskId },
+        select: { id: true },
+      });
+
+      if (!localTicket)
+        throw new Error('Ticket local non trouvé après création de note');
+
+      // 4. Enregistrement local
+      return await this.prisma.ticketMessage.create({
+        data: {
+          autotaskMessageId: BigInt(autotaskNoteId),
+          ticketId: localTicket.id,
+          autotaskTicketId: finalAutotaskId,
+          userType: 'user',
+          authorName: authorFullName,
+          authorAutotaskContactId: Number(createdByContactID),
+          localUserId: userId,
+          apiResourceId: 29682975,
+          content: content,
+          createdAt: new Date(),
+          syncedAt: new Date(),
+          sourceType: 'note',
+        },
+      });
+    } catch (error) {
+      // Si c'est l'erreur "Le ticket n'est pas encore prêt", on la relance pour BullMQ
+      // Si c'est une erreur 500 d'Autotask, on log et on relance aussi
+      console.error(
+        '[CREATE NOTE] Erreur :',
+        error.response?.data || error.message,
+      );
+      throw error;
+    }
+  }
+
+  // src/tickets/tickets.service.ts
+
+  // --- MÉTHODES POUR AJOUTER AUX FILES (APPELÉES PAR LES CONTROLLERS) ---
+
+  async queueSyncUser(userId: number, contactId: number, companyId: number) {
+    await this.autotaskQueue.add(
+      'sync-user',
+      {
+        userId,
+        contactId,
+        companyId,
+      },
+      {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+      },
+    );
+  }
+
+  async queueCreateNote(
+    autotaskTicketId: number,
+    contactId: number,
+    userId: number,
+    content: string,
+  ) {
+    // On ajoute le job à la file
+    await this.autotaskQueue.add(
+      'create-note',
+      {
+        autotaskTicketId,
+        contactId, // correspond à createdByContactID
+        userId,
+        content,
+      },
+      {
+        attempts: 5,
+        backoff: {
+          type: 'exponential',
+          delay: 10000,
+        },
+        removeOnComplete: { count: 50 },
+        removeOnFail: { count: 100 },
+      },
+    );
+  }
+
+  // Garde tes méthodes originales (syncTicketsAndMessagesForUser, createNoteForTicket, etc.)
+  // EXACTEMENT comme elles sont, le Worker va les appeler.
 }

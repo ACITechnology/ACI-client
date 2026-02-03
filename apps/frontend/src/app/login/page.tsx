@@ -20,6 +20,7 @@ export default function Login() {
     setLoading(true);
 
     try {
+      // 1. LOGIN
       const response = await fetch("http://localhost:3001/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -34,55 +35,50 @@ export default function Login() {
         return;
       }
 
+      // Sauvegarde initiale
       localStorage.setItem("token", data.access_token);
       localStorage.setItem("user", JSON.stringify(data.user));
-      
+
       setLoading(false);
       setSyncing(true);
       setSyncProgress(5);
 
+      // 2. LANCER LA BARRE DE PROGRESSION (Fake)
       const fakeProgress = setInterval(() => {
-        setSyncProgress(prev => {
+        setSyncProgress((prev) => {
           if (prev >= 99) return prev;
-          const step = prev < 70 ? 3 : (prev < 90 ? 1.5 : 0.5);
+          const step = prev < 70 ? 3 : prev < 90 ? 1.5 : 0.5;
           return Math.min(prev + step, 99);
         });
       }, 300);
 
+      // 3. APPEL SYNC (BullMQ)
       try {
-        await new Promise(resolve => setTimeout(resolve, 100));
-
         const syncResp = await fetch("http://localhost:3001/auth/sync-status", {
           method: "POST",
-          headers: { 
-            "Authorization": `Bearer ${data.access_token}`,
-            "Content-Type": "application/json" 
-          }
+          headers: {
+            Authorization: `Bearer ${data.access_token}`,
+            "Content-Type": "application/json",
+          },
         });
 
+        // Même si le backend répond "OK" tout de suite, on attend 3 secondes
+        // pour laisser le Worker BullMQ travailler avant de rediriger
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+
         clearInterval(fakeProgress);
+        setSyncProgress(100);
 
-        if (syncResp.ok) {
-          setSyncProgress(100);
-          const updatedData = await syncResp.json();
-          
-          if (updatedData.user) {
-            localStorage.setItem("user", JSON.stringify(updatedData.user));
-          }
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 500);
 
-          setTimeout(() => {
-            window.location.href = "/"; 
-          }, 400);
-        } else {
-          throw new Error("Erreur synchro");
-        }
       } catch (err) {
         clearInterval(fakeProgress);
         setError("La synchronisation a échoué, mais vous pouvez continuer.");
         setSyncing(false);
         setTimeout(() => router.push("/"), 1500);
       }
-
     } catch (err) {
       setError("Erreur réseau");
       setLoading(false);
@@ -93,9 +89,10 @@ export default function Login() {
     <div className="min-h-screen flex flex-col items-center justify-start px-4 pt-4 sm:pt-12 pb-12">
       {/* Utilisation de mt-0 et sm:-mt-10 pour coller le contenu en haut */}
       <div className="w-full max-w-[320px] sm:max-w-sm transition-all mt-0 sm:-mt-10">
-        
         <div className="text-center mb-6">
-          <h1 className="text-3xl font-extrabold text-white mb-1 tracking-tight">Connexion</h1>
+          <h1 className="text-3xl font-extrabold text-white mb-1 tracking-tight">
+            Connexion
+          </h1>
           <p className="text-gray-500 text-sm font-medium">
             Entrez vos identifiants pour continuer.
           </p>
@@ -103,7 +100,10 @@ export default function Login() {
 
         <form className="space-y-5" onSubmit={handleSubmit}>
           <div className="space-y-1">
-            <label htmlFor="email" className="block text-[10px] uppercase tracking-[0.2em] font-bold text-gray-500 ml-1">
+            <label
+              htmlFor="email"
+              className="block text-[10px] uppercase tracking-[0.2em] font-bold text-gray-500 ml-1"
+            >
               Adresse e-mail
             </label>
             <input
@@ -118,7 +118,10 @@ export default function Login() {
           </div>
 
           <div className="space-y-1">
-            <label htmlFor="password" className="block text-[10px] uppercase tracking-[0.2em] font-bold text-gray-500 ml-1">
+            <label
+              htmlFor="password"
+              className="block text-[10px] uppercase tracking-[0.2em] font-bold text-gray-500 ml-1"
+            >
               Mot de passe
             </label>
             <input
@@ -139,9 +142,14 @@ export default function Login() {
                 id="remember"
                 className="h-3.5 w-3.5 rounded-sm border-white/10 bg-white/5 text-pink-600 focus:ring-0 focus:ring-offset-0 transition-colors"
               />
-              <span className="ml-2 group-hover:text-gray-400 transition-colors font-medium">Rester connecté</span>
+              <span className="ml-2 group-hover:text-gray-400 transition-colors font-medium">
+                Rester connecté
+              </span>
             </label>
-            <a href="#" className="text-pink-600/80 hover:text-pink-500 font-medium transition-colors">
+            <a
+              href="#"
+              className="text-pink-600/80 hover:text-pink-500 font-medium transition-colors"
+            >
               Oublié ?
             </a>
           </div>
@@ -164,8 +172,8 @@ export default function Login() {
             <div className="text-center">
               <p className="text-gray-500 text-sm font-medium">
                 Nouveau ici ?{" "}
-                <Link 
-                  href="/register" 
+                <Link
+                  href="/register"
                   className="text-pink-600 hover:text-pink-500 transition-colors font-bold"
                 >
                   Créer un compte
@@ -182,10 +190,16 @@ export default function Login() {
             <div className="relative inline-flex items-center justify-center mb-8">
               <div className="w-24 h-24 rounded-full border border-white/5"></div>
               <div className="absolute w-24 h-24 rounded-full border-t border-pink-600 animate-spin"></div>
-              <span className="absolute text-white font-light text-2xl">{Math.round(syncProgress)}%</span>
+              <span className="absolute text-white font-light text-2xl">
+                {Math.round(syncProgress)}%
+              </span>
             </div>
-            <h2 className="text-white text-xl font-bold mb-2 tracking-tight">Synchronisation</h2>
-            <p className="text-gray-500 text-xs leading-relaxed font-medium">Récupération de vos données Autotask...</p>
+            <h2 className="text-white text-xl font-bold mb-2 tracking-tight">
+              Synchronisation
+            </h2>
+            <p className="text-gray-500 text-xs leading-relaxed font-medium">
+              Récupération de vos données Autotask...
+            </p>
           </div>
         </div>
       )}

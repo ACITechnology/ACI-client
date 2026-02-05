@@ -1,32 +1,53 @@
 version: '3.9'
 
 services:
-  postgres:
-    image: postgres:17-alpine
-    container_name: postgres
-    restart: always
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
     ports:
-      - "5433:5432"
+      - "3001:3001"
     environment:
-      POSTGRES_DB: aci_portal
-      POSTGRES_USER: aci
-      POSTGRES_PASSWORD: 123456
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/aci_db?schema=public
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=ton_secret_super_long_ici
+      - AUTOTASK_API_INTEGRATION_CODE=xxx
+      - AUTOTASK_USERNAME=xxx
+      - AUTOTASK_SECRET=xxx
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./apps/backend:/app  # Pour hot-reload en dev si besoin
+
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:3001
+
+  db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aci_db
+    ports:
+      - "5433:5432"  # 5433 sur l’hôte pour éviter conflit avec ton Postgres local
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: aci-caddy
+  redis:
+    image: redis:7
     restart: always
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
+      - "6380:6379"  # 6380 sur l’hôte
 
 volumes:
   postgres_data:
-  caddy_data:
-  caddy_config:

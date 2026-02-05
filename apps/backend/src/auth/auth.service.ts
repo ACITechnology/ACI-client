@@ -129,6 +129,7 @@ export class AuthService {
     const payload = { 
       sub: user.id, 
       email: user.email,
+      role: user.role,
       autotaskContactId: user.autotaskContactId,
       autotaskCompanyId: user.autotaskCompanyId 
     };
@@ -139,6 +140,7 @@ export class AuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        role: user.role,
         companyName: user.company?.name || 'Inconnu', // ← on récupère depuis la relation
         autotaskContactId: user.autotaskContactId, // ← AJOUTE ÇA
     autotaskCompanyId: user.autotaskCompanyId, // ← AJOUTE ÇA

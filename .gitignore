@@ -1,0 +1,8 @@
+.env
+node_modules/
+dist/
+.next/
+
+# ON NE MET PAS *.sql ici, sinon Prisma meurt.
+# On cible uniquement le gros dump :
+dump_initial.sql

@@ -5,7 +5,7 @@ export async function GET(request: Request) {
     const authHeader = request.headers.get("authorization");
     //console.log("Header Authorization reçu :", authHeader ? "Présent" : "Absent");
 
-    const response = await fetch("http://localhost:3001/tickets", {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets`, {
       cache: "no-store",
       headers: authHeader ? { Authorization: authHeader } : {},
     });

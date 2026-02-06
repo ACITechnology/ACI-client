@@ -1,4 +1,4 @@
-// src/auth/jwt.config.ts
+// apps/backend/src/auth/jwt.config.ts
 export const jwtConstants = {
-  secret: 'SUPER-SECRET-CHANGE-ME-IN-PRODUCTION-2025', // À mettre dans .env plus tard
+  secret: process.env.JWT_SECRET || 'secret-de-secours-uniquement-pour-le-dev',
 };

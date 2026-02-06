@@ -1,53 +1,67 @@
-version: '3.9'
-
 services:
+  # BASE DE DONNÉES
+  db:
+    image: postgres:17-alpine
+    container_name: aci_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: aci
+      POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: aci_portal
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # BACKEND (NestJS)
   backend:
     build:
       context: ./apps/backend
       dockerfile: Dockerfile
+    container_name: aci_backend
+    env_file: .env # Indique à Docker de lire le fichier à la racine
+    restart: always
     ports:
       - "3001:3001"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/aci_db?schema=public
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=ton_secret_super_long_ici
-      - AUTOTASK_API_INTEGRATION_CODE=xxx
-      - AUTOTASK_USERNAME=xxx
-      - AUTOTASK_SECRET=xxx
+      DATABASE_URL: "postgresql://aci:123456@db:5432/aci_portal?schema=public"
+    volumes:
+    - ./uploads:/uploads
     depends_on:
       - db
-      - redis
-    volumes:
-      - ./apps/backend:/app  # Pour hot-reload en dev si besoin
 
+  # FRONTEND (Next.js)
   frontend:
     build:
       context: ./apps/frontend
       dockerfile: Dockerfile
+    container_name: aci_frontend
+    restart: always
     ports:
       - "3000:3000"
+    environment:
+      # Correction de l'indentation ici (2 espaces de plus)
+      NEXT_PUBLIC_API_URL: "https://acitechnology.eu/api" 
     depends_on:
       - backend
-    environment:
-      - NEXT_PUBLIC_API_URL=http://backend:3001
-
-  db:
-    image: postgres:16
+  
+  # REVERSE PROXY (Caddy)
+  caddy:
+    image: caddy:latest
+    container_name: aci_caddy
     restart: always
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: aci_db
     ports:
-      - "5433:5432"  # 5433 sur l’hôte pour éviter conflit avec ton Postgres local
+      - "80:80"
+      - "443:443"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7
-    restart: always
-    ports:
-      - "6380:6379"  # 6380 sur l’hôte
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:

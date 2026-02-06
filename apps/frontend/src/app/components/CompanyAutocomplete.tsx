@@ -28,7 +28,7 @@ export default function CompanyAutocomplete({ onSelect }: CompanyAutocompletePro
 
     const fetchCompanies = async () => {
       try {
-        const response = await fetch(`http://localhost:3001/company/search?q=${encodeURIComponent(query)}`);
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/company/search?q=${encodeURIComponent(query)}`);
         const data = await response.json();
         setCompanies(data);
         setIsOpen(true);

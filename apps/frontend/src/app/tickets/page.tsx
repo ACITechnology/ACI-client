@@ -45,7 +45,7 @@ export default function TicketsPage() {
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:3001/tickets/db", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets/db`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -75,7 +75,7 @@ export default function TicketsPage() {
   useEffect(() => {
     if (!user) return;
 
-    const newSocket = io("http://localhost:3001");
+    const newSocket = io(process.env.NEXT_PUBLIC_API_URL!);
     setSocket(newSocket);
 
     newSocket.on(`ticket_finalized_${user.id}`, (updatedTicket: Ticket) => {
@@ -132,7 +132,7 @@ export default function TicketsPage() {
 
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:3001/tickets", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -23,7 +23,7 @@ export default function TicketDetailPage() {
 
     const token = localStorage.getItem("token");
     try {
-      const res = await fetch(`http://localhost:3001/tickets/${id}/notes`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets/${id}/notes`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -62,7 +62,7 @@ export default function TicketDetailPage() {
     const loadTicket = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch(`http://localhost:3001/tickets/${id}`, {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets/${id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
@@ -82,7 +82,7 @@ export default function TicketDetailPage() {
         const ticketData = await res.json();
         setTicket(ticketData);
 
-        const messagesRes = await fetch(`http://localhost:3001/tickets/${id}/messages`, {
+        const messagesRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets/${id}/messages`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (messagesRes.ok) {

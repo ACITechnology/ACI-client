@@ -22,7 +22,7 @@ export default function Login() {
 
     try {
       // 1. LOGIN
-      const response = await fetch("http://localhost:3001/auth/login", {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.toLowerCase(), password }),
@@ -58,10 +58,10 @@ export default function Login() {
       }, 200);
 
       // 3. SE CONNECTER AU SOCKET POUR ÉCOUTER LA FIN
-      const socket = io("http://localhost:3001");
+      const socket = io(process.env.NEXT_PUBLIC_API_URL)
       const syncChannel = `sync_finished_${data.user.id}`;
 
-      const syncPromise = new Promise((resolve) => {
+      const syncPromise = new Promise<number>((resolve) => {
         socket.on(syncChannel, (payload) => {
           const wsReceivedTime = Date.now();
           console.log(`[PERF] 📥 SIGNAL WS REÇU !`);
@@ -75,7 +75,7 @@ export default function Login() {
       // 4. APPEL SYNC (BullMQ)
       try {
         const apiCallTime = Date.now();
-        await fetch("http://localhost:3001/auth/sync-status", {
+        await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/sync-status`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${data.access_token}`,
@@ -91,7 +91,7 @@ export default function Login() {
           (Date.now() - visualStartTime) /
           1000
         ).toFixed(2);
-        const networkLatency = ((wsFinishedAt - apiCallTime) / 1000).toFixed(2);
+        const networkLatency = (((wsFinishedAt as number) - apiCallTime) / 1000).toFixed(2);
 
         console.log("-----------------------------------------");
         console.log(`[PERF-FINAL] 📊 RÉSUMÉ DE LA SYNCHRO :`);

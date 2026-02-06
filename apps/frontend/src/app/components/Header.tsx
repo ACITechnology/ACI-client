@@ -9,6 +9,7 @@ export default function Header() {
   const [user, setUser] = useState<{
     firstName: string;
     lastName: string;
+    role?: string; // On ajoute le rôle ici (optionnel avec le ?)
   } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuContainerRef = useRef<HTMLDivElement>(null);

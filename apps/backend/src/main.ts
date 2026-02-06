@@ -17,6 +17,7 @@ async function bootstrap() {
       'https://client.acitechnology.eu', // Nouveau sous-domaine
       'https://acitechnology.eu',        // Ancien domaine (au cas où)
       'http://localhost:3000'            // Dev local
+      'http://localhost'        // Accès via Caddy (Local)
     ],
     credentials: true,
   });

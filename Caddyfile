@@ -1,9 +1,11 @@
-client.acitechnology.eu {
+:80 {
     handle /api* {
         reverse_proxy backend:3001
     }
+
     handle {
         reverse_proxy frontend:3000
     }
+
     encode zstd gzip
 }

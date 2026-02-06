@@ -55,29 +55,30 @@ export class TechniciansService {
       console.log(`Récupéré ${resources.length} techniciens depuis Autotask`);
 
       for (const resource of resources) {
-        if (resource.firstName && resource.lastName) {
-          const fullName = `${resource.firstName} ${resource.lastName}`;
+  if (resource.firstName && resource.lastName) {
+    const fullName = `${resource.firstName} ${resource.lastName}`;
 
-          await this.prisma.technician.upsert({
-            where: { id: resource.id },
-            update: {
-              firstName: resource.firstName,
-              lastName: resource.lastName,
-              fullName,
-              email: resource.email || null,
-              isActive: resource.isActive ?? true,
-            },
-            create: {
-              id: resource.id,
-              firstName: resource.firstName,
-              lastName: resource.lastName,
-              fullName,
-              email: resource.email || null,
-              isActive: resource.isActive ?? true,
-            },
-          });
-        }
-      }
+    await this.prisma.technician.upsert({
+  where: { id: Number(resource.id) }, // Force la conversion en nombre
+  update: {
+    id: Number(resource.id),
+    firstName: String(resource.firstName),
+    lastName: String(resource.lastName),
+    fullName: `${resource.firstName} ${resource.lastName}`,
+    email: resource.emailAddress || null,
+    isActive: Boolean(resource.isActive),
+  },
+  create: {
+    id: Number(resource.id),
+    firstName: String(resource.firstName),
+    lastName: String(resource.lastName),
+    fullName: `${resource.firstName} ${resource.lastName}`,
+    email: resource.emailAddress || null,
+    isActive: Boolean(resource.isActive),
+  },
+});
+  }
+}
 
       console.log("Synchronisation techniciens terminée");
     } catch (error) {

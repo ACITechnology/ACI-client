@@ -10,6 +10,11 @@ services:
       POSTGRES_DB: aci_portal
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aci -d aci_portal"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # BACKEND (NestJS)
   backend:
@@ -20,13 +25,22 @@ services:
     env_file: .env 
     restart: always
     ports:
-      - "3001:3001" # Port exposé pour le load-balancer
+      - "3001:3001"
+      - "5555:5555"
     environment:
       DATABASE_URL: "postgresql://aci:${POSTGRES_PASSWORD}@db:5432/aci_portal?schema=public"
     volumes:
+      - ./apps/backend:/app             # Synchronise le code backend
+      - /app/node_modules               # Empêche d'écraser les modules du conteneur par ceux du PC
       - ./uploads:/uploads
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    # MODIFICATION : On utilise npm run start:dev pour le hot-reload
+    command: >
+      sh -c "npx prisma db push --accept-data-loss && npm run start:dev"
 
   # FRONTEND (Next.js)
   frontend:
@@ -38,11 +52,27 @@ services:
     container_name: aci_frontend
     restart: always
     ports:
-      - "3000:3000" # Port exposé pour le load-balancer
+      - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      WATCHPACK_POLLING: "true"         # Nécessaire pour détecter les changements sur certains OS
+      WDS_SOCKET_PORT: 0             # Permet à Next.js de choisir un port de socket dynamique pour le hot-reload
+    volumes:
+      - ./apps/frontend:/app            # Synchronise le code frontend
+      - /app/node_modules               # Empêche d'écraser les modules du conteneur
+      - /app/.next # AJOUTE CECI pour éviter les conflits de cache entre Docker et ton PC
     depends_on:
-      - backend
+      backend:
+        condition: service_started
+    # MODIFICATION : Force le mode dev pour le hot-reload
+    command: npm run dev
+
+  # REDIS
+  redis:
+    image: redis:alpine
+    container_name: aci_redis
+    ports:
+      - "6379:6379"
 
 volumes:
   postgres_data:

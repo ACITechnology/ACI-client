@@ -29,33 +29,29 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+// @UseGuards(JwtAuthGuard)
 @Post('sync-status')
-async syncStatus(@Req() req: any) {
-  const user = req.user;
+async syncStatus(@Body() body: any) {
+  const user = body.user;
   
-  // 1. On attend la fin de la synchro réelle
-  // await this.ticketsService.syncTicketsAndMessagesForUser(
-  //   user.userId, 
-  //   user.autotaskContactId, 
-  //   user.autotaskCompanyId
-  // );
+  // AJOUTE CE LOG ICI POUR VOIR DANS LE TERMINAL
+  console.log('--- DEBUG SYNC ---');
+  console.log('Payload reçu:', JSON.stringify(body));
+  console.log('Body complet reçu:', body); // Vérifie si tu vois { user: {...} }
+  
+  if (!user) {
+    throw new UnauthorizedException('Utilisateur non fourni pour la synchro');
+  }
+
+  const finalId = user.id || user.userId;
+  console.log('ID Utilisateur détecté:', finalId);
+
   await this.ticketsService.queueSyncUser(
-    user.userId, 
+    finalId, 
     user.autotaskContactId, 
     user.autotaskCompanyId
   );
 
-
-  // 2. IMPORTANT : On récupère l'utilisateur à jour en base
-  // On utilise directement le service de tickets ou prisma pour récupérer l'user
-  // car req.user contient les vieilles infos du Token JWT
-  
-  //const updatedUser = await this.authService.getFreshUser(user.userId);
-
-  return { 
-    success: true, 
-    message: 'Synchronisation en arrière-plan lancée'
-  };
+  return { success: true };
 }
 }

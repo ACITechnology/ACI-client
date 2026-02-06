@@ -31,86 +31,148 @@ export default function TicketsPage() {
 
   // --- CHARGEMENT INITIAL & AUTH ---
   useEffect(() => {
+    const storedToken = localStorage.getItem("token");
     const storedUser = localStorage.getItem("user");
-    if (!storedUser) {
+
+    console.log("[DEBUG TICKETS] Montage du composant");
+    console.log("[DEBUG TICKETS] Token présent ?", !!storedToken);
+    console.log("[DEBUG TICKETS] User présent ?", !!storedUser);
+
+    if (!storedUser || !storedToken) {
+      console.warn("[DEBUG TICKETS] Manque user ou token -> Redirection Login");
       router.push("/login");
       return;
     }
+
     setUser(JSON.parse(storedUser));
   }, [router]);
 
   // --- RÉCUPÉRATION DES TICKETS ---
   const loadTicketsFromDb = useCallback(async () => {
-    if (!user) return;
+    // 1. Récupération
+    let token = localStorage.getItem("token");
+    const storedUser = localStorage.getItem("user");
+
+    // 2. NETTOYAGE : Si le token contient des " au début et à la fin, on les enlève
+    if (token && token.startsWith('"') && token.endsWith('"')) {
+      token = token.slice(1, -1);
+    }
+
+    const currentUser = user || (storedUser ? JSON.parse(storedUser) : null);
+
+    if (!token || !currentUser?.id) {
+      console.log("[DEBUG TICKETS] Token ou User manquant");
+      return;
+    }
+
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets/db`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          // On s'assure que token est propre ici
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ userId: user.id }),
+        body: JSON.stringify({ userId: currentUser.id }),
       });
-      if (!res.ok) throw new Error(`Erreur DB - Status ${res.status}`);
+
+      if (res.status === 401) {
+        console.error("Token invalide ou expiré");
+        router.push("/login");
+        return;
+      }
+
       const dbTickets = await res.json();
-      const sorted = dbTickets.sort(
-        (a: any, b: any) =>
-          new Date(b.createDate).getTime() - new Date(a.createDate).getTime(),
+      const ticketsArray = Array.isArray(dbTickets)
+        ? dbTickets
+        : dbTickets.data || [];
+      setTickets(
+        ticketsArray.sort(
+          (a: any, b: any) =>
+            new Date(b.createDate).getTime() - new Date(a.createDate).getTime(),
+        ),
       );
-      setTickets(sorted);
     } catch (err) {
-      console.error(err);
+      console.error("Erreur:", err);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, router]);
 
   useEffect(() => {
-    loadTicketsFromDb();
-  }, [loadTicketsFromDb]);
+    if (user && user.id) {
+      loadTicketsFromDb();
+    }
+  }, [user, loadTicketsFromDb]);
 
   // --- LOGIQUE SOCKET (ÉCOUTE DU WORKER) ---
-  useEffect(() => {
-    if (!user) return;
+  // --- LOGIQUE SOCKET (ÉCOUTE DU WORKER) ---
+useEffect(() => {
+  if (!user?.id) return;
 
-    const newSocket = io(process.env.NEXT_PUBLIC_API_URL!);
-    setSocket(newSocket);
+  // Utilisation de l'URL propre (sans /api) pour Socket.io
+  const socketUrl = process.env.NEXT_PUBLIC_API_URL?.replace("/api", "") || "";
+  
+  const newSocket = io(socketUrl, {
+    transports: ["websocket"], // Évite le polling HTTP qui peut échouer
+    reconnectionAttempts: 5,
+  });
 
-    newSocket.on(`ticket_finalized_${user.id}`, (updatedTicket: Ticket) => {
-      const receiveTime = new Date().toLocaleTimeString();
-      console.log(`[FRONTEND] 📥 [${receiveTime}] Message reçu du serveur !`);
-      console.log("🚀 Version finale du ticket :", updatedTicket);
+  setSocket(newSocket);
 
-      setCreateProgress(100);
+  const channel = `ticket_finalized_${user.id}`;
 
-      setTimeout(() => {
-        // Met à jour la liste localement
-        setTickets((prev) =>
-          prev.map((t) =>
-            t.id === updatedTicket.id || t.ticketNumber.startsWith("TEMP")
-              ? updatedTicket
-              : t,
-          ),
+  newSocket.on("connect", () => {
+    console.log("[DEBUG SOCKET] Connecté au serveur avec ID:", newSocket.id);
+  });
+
+  newSocket.on(channel, (updatedTicket: Ticket) => {
+    console.log(`[FRONTEND] 📥 Message reçu sur ${channel}`, updatedTicket);
+
+    setCreateProgress(100);
+
+    setTimeout(() => {
+      setTickets((prev) => {
+        // On cherche si le ticket existe déjà (soit par ID, soit par numéro de ticket)
+        const exists = prev.find(t => 
+          t.id === updatedTicket.id || 
+          t.ticketNumber === updatedTicket.ticketNumber ||
+          (t.ticketNumber && t.ticketNumber.startsWith("TEMP"))
         );
 
-        // Nettoyage interface
-        setIsModalOpen(false);
-        setIsCreating(false);
-        setCreateProgress(0);
-        setTicketTitle("");
-        setTicketDescription("");
+        if (exists) {
+          // On remplace le temporaire par le ticket final
+          return prev.map((t) =>
+            (t.id === updatedTicket.id || t.ticketNumber === updatedTicket.ticketNumber || t.ticketNumber.startsWith("TEMP"))
+              ? updatedTicket
+              : t
+          );
+        } else {
+          // Si par hasard il n'est pas dans la liste, on l'ajoute au début
+          return [updatedTicket, ...prev];
+        }
+      });
 
-        // Petit refresh DB final pour être sûr
-        loadTicketsFromDb();
-      }, 1000);
-    });
+      // Nettoyage de l'interface de création
+      setIsModalOpen(false);
+      setIsCreating(false);
+      setCreateProgress(0);
+      setTicketTitle("");
+      setTicketDescription("");
+      
+      // Sécurité : on recharge quand même depuis la DB pour synchroniser tout
+      loadTicketsFromDb();
+    }, 1000);
+  });
 
-    return () => {
-      newSocket.disconnect();
-    };
-  }, [user, loadTicketsFromDb]);
+  // NETTOYAGE CRITIQUE : Se déclenche quand on quitte la page ou que l'user change
+  return () => {
+    console.log("[DEBUG SOCKET] Déconnexion et nettoyage...");
+    newSocket.off(channel);
+    newSocket.disconnect();
+  };
+}, [user?.id, loadTicketsFromDb]); // On utilise user.id pour éviter les re-rendus inutiles
 
   // --- LOGIQUE DE CRÉATION ---
   const handleCreateTicket = async () => {

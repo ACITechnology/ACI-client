@@ -11,14 +11,17 @@ import { TechniciansService } from './autotask/technicians.service';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.setGlobalPrefix('api');
+
   // CONFIGURATION CORS MISE À JOUR
   app.enableCors({
     origin: [
       'https://client.acitechnology.eu', // Nouveau sous-domaine
       'https://acitechnology.eu',        // Ancien domaine (au cas où)
-      'http://localhost:3000'            // Dev local
+      'http://localhost:3000',            // Dev local
       'http://localhost'        // Accès via Caddy (Local)
     ],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
 

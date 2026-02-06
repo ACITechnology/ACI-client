@@ -5,11 +5,12 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 
 @Injectable()
-export class CompanyService implements OnModuleInit{
+export class CompanyService implements OnModuleInit {
   private readonly logger = new Logger(CompanyService.name);
 
-   // TES CLÉS AUTOTASK (on les mettra dans .env plus tard)
-  private readonly BASE_URL = 'https://webservices16.autotask.net/ATServicesRest/V1.0';
+  // TES CLÉS AUTOTASK (on les mettra dans .env plus tard)
+  private readonly BASE_URL =
+    'https://webservices16.autotask.net/ATServicesRest/V1.0';
   private readonly headers = {
     ApiIntegrationCode: 'D66IA7GZJ77T3UAJOVHCVT7KKXT',
     UserName: 'e2bofpdnmykvqf6@ACITECHNOLOGY.FR',
@@ -18,7 +19,9 @@ export class CompanyService implements OnModuleInit{
   };
 
   async onModuleInit() {
-    this.logger.log('Démarrage initial : synchronisation des entreprises Autotask');
+    this.logger.log(
+      'Démarrage initial : synchronisation des entreprises Autotask',
+    );
     await this.syncCompaniesFromAutotask();
   }
 
@@ -67,7 +70,7 @@ export class CompanyService implements OnModuleInit{
     });
   }
 
-    // SYNCHRO AUTOMATIQUE DES ENTREPRISES AUTOTASK
+  // SYNCHRO AUTOMATIQUE DES ENTREPRISES AUTOTASK
   async syncCompaniesFromAutotask() {
     this.logger.log('Début de la synchronisation des entreprises Autotask...');
 
@@ -85,31 +88,41 @@ export class CompanyService implements OnModuleInit{
       const companies = response.data.items || [];
 
       for (const company of companies) {
+        // On utilise bien 'company' (la variable de la boucle ci-dessus)
         const normalized = this.normalizeString(company.companyName);
 
         await this.prisma.company.upsert({
-          where: { autotaskId: company.id },
+          where: { autotaskId: Number(company.id) },
           update: {
-            name: company.companyName,
-            nameNormalized: normalized,
+            name: String(company.companyName),
+            nameNormalized: this.normalizeString(company.companyName),
+            isActive: true,
           },
           create: {
-            autotaskId: company.id,
-            name: company.companyName,
-            nameNormalized: normalized,
+            autotaskId: Number(company.id),
+            name: String(company.companyName),
+            nameNormalized: this.normalizeString(company.companyName),
+            isActive: true,
           },
         });
       }
 
-      this.logger.log(`Synchronisation terminée : ${companies.length} entreprises mises à jour`);
+      this.logger.log(
+        `Synchronisation terminée : ${companies.length} entreprises mises à jour`,
+      );
     } catch (error) {
-      this.logger.error('Erreur lors de la synchro Autotask', error.response?.data || error.message);
+      this.logger.error(
+        'Erreur lors de la synchro Autotask',
+        error.response?.data || error.message,
+      );
     }
   }
 
-    @Cron('0 4 * * *') // ← tous les jours à 4h00
+  @Cron('0 4 * * *') // ← tous les jours à 4h00
   async syncDaily() {
-    this.logger.log('Cron quotidien : synchronisation des entreprises Autotask');
+    this.logger.log(
+      'Cron quotidien : synchronisation des entreprises Autotask',
+    );
     await this.syncCompaniesFromAutotask();
   }
 }

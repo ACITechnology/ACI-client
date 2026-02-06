@@ -15,6 +15,13 @@ export default function Login() {
 
   const router = useRouter();
 
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+
+  // On retire le "/api" pour avoir la base du serveur (pour Socket.io)
+  // Cela donnera http://localhost:3001 en local
+  // et https://client.acitechnology.eu en production
+  const socketUrl = apiUrl.replace("/api", "");
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
@@ -22,11 +29,14 @@ export default function Login() {
 
     try {
       // 1. LOGIN
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.toLowerCase(), password }),
-      });
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/login`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.toLowerCase(), password }),
+        },
+      );
 
       const data = await response.json();
 
@@ -38,7 +48,13 @@ export default function Login() {
 
       // Sauvegarde initiale
       localStorage.setItem("token", data.access_token);
+
+      console.log(
+        "[DEBUG LOGIN] Token stocké :",
+        data.access_token.substring(0, 10) + "...",
+      );
       localStorage.setItem("user", JSON.stringify(data.user));
+      console.log("[DEBUG LOGIN] User stocké :", data.user.id);
 
       setLoading(false);
       setSyncing(true);
@@ -58,60 +74,98 @@ export default function Login() {
       }, 200);
 
       // 3. SE CONNECTER AU SOCKET POUR ÉCOUTER LA FIN
-      const socket = io(process.env.NEXT_PUBLIC_API_URL)
+      //const socket = io(process.env.NEXT_PUBLIC_API_URL)
+      // Remplace la ligne de connexion socket par :
+      const socket = io(process.env.NEXT_PUBLIC_WS_URL || socketUrl);
       const syncChannel = `sync_finished_${data.user.id}`;
 
       const syncPromise = new Promise<number>((resolve) => {
         socket.on(syncChannel, (payload) => {
-          const wsReceivedTime = Date.now();
-          console.log(`[PERF] 📥 SIGNAL WS REÇU !`);
-          console.log(
-            `[PERF] ⚙️ Temps d'exécution Backend (via Autotask) : ${payload.duration}s`,
-          );
-          resolve(wsReceivedTime);
+          console.log(`[PERF] 📥 SIGNAL WS REÇU !`, payload);
+          resolve(Date.now());
         });
       });
 
       // 4. APPEL SYNC (BullMQ)
       try {
         const apiCallTime = Date.now();
-        await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/sync-status`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${data.access_token}`,
-            "Content-Type": "application/json",
-          },
-        });
 
-        // ATTENTE DU SIGNAL
+        // On récupère l'user directement depuis la réponse du login (data)
+        // car le state React 'user' ne sera pas encore mis à jour !
+        const userToSync = data.user;
+        const tokenToUse = data.access_token;
+
+        console.log("[DEBUG FRONT] Objet user récupéré du login:", userToSync);
+
+        if (!userToSync || !userToSync.id) {
+          console.error(
+            "[DEBUG FRONT] ERREUR: L'objet user est incomplet !",
+            data,
+          );
+          throw new Error("Données utilisateur manquantes après login");
+        }
+
+        const syncRes = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/auth/sync-status`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${tokenToUse}`,
+            },
+            body: JSON.stringify({
+              user: {
+                id: userToSync.id,
+                autotaskContactId: userToSync.autotaskContactId,
+                autotaskCompanyId: userToSync.autotaskCompanyId,
+              },
+            }),
+          },
+        );
+
+        if (!syncRes.ok) {
+          const errorData = await syncRes.json();
+          console.error(
+            "[DEBUG FRONT] Le backend a rejeté la synchro:",
+            errorData,
+          );
+          throw new Error("Erreur backend sync-status");
+        }
+
+        // ATTENTE DU SIGNAL SOCKET
         const wsFinishedAt = await syncPromise;
 
-        // CALCULS FINAUX
+        // 2. NETTOYAGE IMMÉDIAT DU SOCKET (Très important)
+        socket.removeAllListeners(); // On arrête d'écouter pour éviter les doublons
+        socket.disconnect(); // On ferme la connexion proprement
+
+        // 3. CALCULS FINAUX (Optionnel, pour tes logs)
         const totalVisualDuration = (
           (Date.now() - visualStartTime) /
           1000
         ).toFixed(2);
-        const networkLatency = (((wsFinishedAt as number) - apiCallTime) / 1000).toFixed(2);
+        const networkLatency = (
+          ((wsFinishedAt as number) - apiCallTime) /
+          1000
+        ).toFixed(2);
 
-        console.log("-----------------------------------------");
-        console.log(`[PERF-FINAL] 📊 RÉSUMÉ DE LA SYNCHRO :`);
         console.log(
-          `[PERF-FINAL] 🕒 Durée totale de la barre : ${totalVisualDuration}s`,
+          `[PERF-FINAL] 🕒 Barre : ${totalVisualDuration}s | 🌐 Latence : ${networkLatency}s`,
         );
-        console.log(
-          `[PERF-FINAL] 🌐 Latence (Appel API -> Retour WS) : ${networkLatency}s`,
-        );
-        console.log("-----------------------------------------");
 
+        // 4. MISE À JOUR DE L'INTERFACE
         clearInterval(fakeProgress);
         setSyncProgress(100);
-        socket.disconnect();
 
+        // 5. REDIRECTION PROPRE
         setTimeout(() => {
-          window.location.href = "/";
-        }, 500);
+          // .replace est mieux que .href pour éviter que l'utilisateur
+          // ne revienne sur l'écran de chargement avec le bouton "Précédent"
+          window.location.replace("/");
+        }, 300);
       } catch (err) {
         clearInterval(fakeProgress);
+        socket.disconnect(); // Ajoute ça ici par sécurité
         setError("La synchronisation a échoué, mais vous pouvez continuer.");
         setSyncing(false);
         setTimeout(() => router.push("/"), 1500);

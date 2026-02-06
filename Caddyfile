@@ -1,11 +1,9 @@
-acitechnology.eu {
-    # Redirige tout ce qui commence par /client vers le frontend
-    handle_path /client* {
-        reverse_proxy frontend:3000
-    }
-
-    # Redirige tout ce qui commence par /api vers le backend
-    handle_path /api* {
+client.acitechnology.eu {
+    handle /api* {
         reverse_proxy backend:3001
     }
+    handle {
+        reverse_proxy frontend:3000
+    }
+    encode zstd gzip
 }

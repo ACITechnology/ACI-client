@@ -2,13 +2,16 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# On déclare que l'argument va être utilisé pendant le build
+ARG NEXT_PUBLIC_API_URL
+
 COPY package*.json ./
 RUN npm install
 
 COPY . .
 
-# Build de l'application Next.js
-RUN npm run build
+# On injecte l'argument dans l'environnement du build
+RUN NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL npm run build
 
 FROM node:20-alpine
 

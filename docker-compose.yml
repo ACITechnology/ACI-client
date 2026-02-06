@@ -6,10 +6,9 @@ services:
     restart: always
     environment:
       POSTGRES_USER: aci
-      POSTGRES_PASSWORD: 123456
+      POSTGRES_PASSWORD: ${DB_PASSWORD} # Utilise la variable du .env
       POSTGRES_DB: aci_portal
-    ports:
-      - "5433:5432"
+    # On retire "ports" pour la sécurité : seul le backend y aura accès en interne
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -19,14 +18,12 @@ services:
       context: ./apps/backend
       dockerfile: Dockerfile
     container_name: aci_backend
-    env_file: .env # Indique à Docker de lire le fichier à la racine
+    env_file: .env 
     restart: always
-    ports:
-      - "3001:3001"
     environment:
-      DATABASE_URL: "postgresql://aci:123456@db:5432/aci_portal?schema=public"
+      DATABASE_URL: "postgresql://aci:${DB_PASSWORD}@db:5432/aci_portal?schema=public"
     volumes:
-    - ./uploads:/uploads
+      - ./uploads:/uploads
     depends_on:
       - db
 
@@ -35,13 +32,13 @@ services:
     build:
       context: ./apps/frontend
       dockerfile: Dockerfile
+      args:
+        # Important pour que Next.js build avec la bonne URL d'API
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     container_name: aci_frontend
     restart: always
-    ports:
-      - "3000:3000"
     environment:
-      # Correction de l'indentation ici (2 espaces de plus)
-      NEXT_PUBLIC_API_URL: "https://acitechnology.eu/api" 
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     depends_on:
       - backend
   

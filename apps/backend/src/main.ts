@@ -1,4 +1,4 @@
-// src/main.ts
+// backend/src/main.ts
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
@@ -11,8 +11,13 @@ import { TechniciansService } from './autotask/technicians.service';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // CONFIGURATION CORS MISE À JOUR
   app.enableCors({
-    origin: ['https://acitechnology.eu', 'http://localhost:3000'], // autorise seulement le frontend
+    origin: [
+      'https://client.acitechnology.eu', // Nouveau sous-domaine
+      'https://acitechnology.eu',        // Ancien domaine (au cas où)
+      'http://localhost:3000'            // Dev local
+    ],
     credentials: true,
   });
 
@@ -28,13 +33,13 @@ async function bootstrap() {
     );
   }
 
-  // LA LIGNE QUI RÉSOUT TOUT SOUS WSL2
- const PORT = 3001; // Définis la variable ici
+  const PORT = 3001;
+  // '0.0.0.0' est parfait pour Docker, ça permet d'écouter sur toutes les interfaces
   await app.listen(PORT, '0.0.0.0');
 
   const baseUrl =
     process.env.NODE_ENV === 'production'
-      ? 'https://acitechnology.eu/api'
+      ? 'https://client.acitechnology.eu/api'
       : `http://localhost:${PORT}`;
 
   console.log(`Application is running on: ${baseUrl}`);

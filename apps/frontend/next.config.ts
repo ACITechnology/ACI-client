@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  basePath: '/client',
   reactCompiler: true,
+  /* Tu peux supprimer basePath car l'app sera à la racine du sous-domaine */
 };
 
 export default nextConfig;
